@@ -1,1 +1,10 @@
-<a href="#">Download Certificate</a>
+<a class="btn btn-link" href="http://mitmproxy.org/doc/index.html" target="_blank"><i class="icon-book"></i> Documentation</a><br>
+<a class="btn btn-link" href="https://github.com/mitmproxy/mitmproxy" target="_blank"><i class="icon-github-alt"></i> Repository</a><br>
+<a class="btn btn-link" href="https://github.com/mitmproxy/mitmproxy/issues?state=open" target="_blank"><i class="icon-bug"></i> Report Issues</a>
+<hr>
+<dl>
+    <dt>Hostname</dt>
+    <dd data-bind="textContent: config.get('proxy').join(':')"></dd>
+    <dt>GUI Authentication Key</dt>
+    <dd data-bind="textContent: config.get('auth')"></dd>
+</dl>

@@ -45,9 +45,15 @@ define([
 							out: self.reportOutput.out
 						});
 
+                        //All dependencies are cached by the AMD loader by default -> uncache
+                        for(var k in require.modules) {
+                            if(k.indexOf("ReportScripts") === 0)
+                                delete require.modules[k];
+                        }
 						//Adjust RequireJS module loading path
 						_mid = require.module.mid;
 						require.module.mid = "ReportScripts/" + self.reportEditor.filename;
+
 						with(window._reportPaneExterns) {
 							eval(code);
 						}

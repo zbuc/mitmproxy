@@ -12,6 +12,7 @@ from werkzeug.exceptions import *
 from werkzeug.datastructures import ContentRange
 from werkzeug.http import parse_range_header
 from werkzeug.utils import secure_filename
+from libmproxy.version import VERSION
 
 mapp = flask.Flask(__name__)
 mapp.debug = True
@@ -95,8 +96,10 @@ def app_static(filename):
 def config():
     m = mapp.config["PMASTER"]
     return jsonify(
+        version=VERSION,
         proxy=m.server.server_address,
         token=xsrf_token,
+        auth=auth_token(),
         readonly=mapp.config["readonly"]
     )
 
@@ -253,8 +256,7 @@ def content(flowid, message):
 
 @mapp.route("/api/fs/<path:path>", methods=['GET', 'POST', 'PUT', 'DELETE'])
 def fsapi(path):
-    filename = ("="+secure_filename(path)) if path.startswith("=") else secure_filename(path)
-    path = safe_join(mapp.root_path + '/../scripts/gui', filename)
+    path = safe_join(mapp.root_path + '/../scripts/gui', path)
     func = getattr(FilesystemApi, str(request.method))
     return func(
         path=path,
