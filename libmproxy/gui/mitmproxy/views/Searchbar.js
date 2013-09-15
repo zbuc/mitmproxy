@@ -140,6 +140,7 @@ define(["dojo/_base/declare",
             }
 			this.filters.splice(this.filters.indexOf(filter), 1);
 			this.updateBindings();
+			$(this.domNode).popover("destroy");
 		},
         onInput: function(filter) {
             var last = this.filters[this.filters.length - 1];
