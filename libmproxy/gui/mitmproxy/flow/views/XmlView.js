@@ -4,7 +4,7 @@ define(["./BasicContentView", "../simpleMatcher"],
   var XmlView = BasicContentView.createSubclass([]);
   
   XmlView.className = "flow-xml " + BasicContentView.className;
-  XmlView.matches = simpleMatcher(/xml/i, /\.xml$/i);
+  XmlView.matches = simpleMatcher(/xml/i, /\.xml$/i, true);
 
   return XmlView;
 });

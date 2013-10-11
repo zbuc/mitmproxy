@@ -13,7 +13,7 @@ define(["./AbstractView",
   });
   
   BasicContentView.className = "flow-text";
-  BasicContentView.matches = simpleMatcher(/application|text/i);
+  BasicContentView.matches = simpleMatcher(/application|text/i, undefined, true);
 
   return BasicContentView;
 });

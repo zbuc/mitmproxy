@@ -8,7 +8,7 @@ define(["./AbstractView",
   
   BinaryView.className = "flow-binary";
   BinaryView.matches   = function(flow) {
-    return false;
+    throw new Error("unimplemented");
   };
 
   return BinaryView;

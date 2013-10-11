@@ -4,7 +4,7 @@ define(["./BasicContentView","../simpleMatcher"],
   var CssView = BasicContentView.createSubclass([]);
   
   CssView.className = "flow-css " + BasicContentView.className;
-  CssView.matches = simpleMatcher(/css/i, /\.css$/i);
+  CssView.matches = simpleMatcher(/css/i, /\.css$/i, true);
   
   return CssView;
 });

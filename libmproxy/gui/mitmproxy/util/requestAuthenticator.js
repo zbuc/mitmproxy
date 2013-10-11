@@ -1,7 +1,7 @@
 /**
  * All mitmproxy API calls that have side effects (e.g. writing data to disk)
  * need to pass the valid auth token to prevent CSRF attacks.
- * This token can be obtained by calling /api/authtoken
+ * This token can be obtained by calling config.get("token")
  * 
  * If you are calling sensitive functions, 
  * make sure that the promise returned by this module has been fulfilled.

@@ -2,17 +2,12 @@ if (define && define.amd) //AMDize jQuery
 	define.amd.jQuery = true;
 
 require(
-["dojo/when",
-		"dojo/on",
-		"dojo/topic",
-		"mitmproxy/MainLayout",
-		"mitmproxy/flow/FlowFactory",
+[		"mitmproxy/MainLayout",
 		"mitmproxy/traffic",
 		"mitmproxy/util/versionCheck",
 		"mitmproxy/util/sampleFlow",
-		"mitmproxy/util/requestAuthenticator",
-		"mitmproxy/search"
-], function(when, on, topic, MainLayout, FlowFactory, flowStore, versionCheck, sampleFlow) {
+		"mitmproxy/util/requestAuthenticator"
+], function(MainLayout, flowStore, versionCheck, sampleFlow) {
 
 	//Debug
 	window.mitmproxy = {
@@ -20,11 +15,6 @@ require(
 		sampleFlow: sampleFlow,
 		MainLayout: MainLayout
 	};
-
-	topic.subscribe("mitmproxy/newFlow", function(flow) {
-		FlowFactory.makeFlow(flow);
-		flowStore.notify(flow);
-	});
 
     /* Super Ugly Workaround to refresh the grid
     manually as long as the mitmproxy isn't finished yet */
