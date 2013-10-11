@@ -7,8 +7,7 @@ define([
 ], function(domConstruct, on, _, hljs, MessageUtils, RequestUtils) {
   var bindings = {};
 
-  var askPretty = 1024 * 15,
-    autoPretty = 1024 * 300;
+  var autoPretty = 1024 * 300;
 
   bindings.headerTable = function(type, node, message) {
 
@@ -93,6 +92,7 @@ define([
 
       node.classList.remove("preview-active");
       node.classList.remove("preview-loading");
+      domConstruct.empty(node);
 
       function load() {
         node._contentLoading = MessageUtils.getContent(message, {
@@ -128,18 +128,12 @@ define([
   };
 
   bindings._prettifyNodeTransform = function(message, node) {
-    function prettify() {
-      hljs.highlightBlock(node);
-    }
-
     if (message.contentLength < autoPretty) {
-      prettify();
-    } else if (message.contentLength < askPretty) {
-      //FIXME
+      hljs.highlightBlock(node);
     }
   };
 
-  //no transform by default
+  //prettyprint by default
   bindings.displayContent = bindings._displayContent(undefined, bindings._prettifyNodeTransform);
 
   return bindings;
