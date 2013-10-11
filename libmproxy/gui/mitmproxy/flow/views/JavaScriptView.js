@@ -4,6 +4,7 @@ define(["dojo/_base/declare", "dojo/_base/lang", "./BasicContentView", "../simpl
   var jsBindings = lang.mixin({}, FlowBindings);
   jsBindings.displayContent = FlowBindings._displayContent(function(content){
     try {
+
       var json = JSON.parse(content);
       return JSON.stringify(json,null,"  ");
     } catch(e){
@@ -16,7 +17,7 @@ define(["dojo/_base/declare", "dojo/_base/lang", "./BasicContentView", "../simpl
   });
   
   JavaScriptView.className = "flow-javascript " + BasicContentView.className;
-  JavaScriptView.matches = simpleMatcher(/(javascript|json)/i, /(\.js|\.json)$/i);
+  JavaScriptView.matches = simpleMatcher(/(javascript|json)/i, /(\.js|\.json)$/i, true);
 
   return JavaScriptView;
 });
