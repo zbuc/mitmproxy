@@ -117,6 +117,8 @@ class DumpMaster(flow.FlowMaster):
         return flows
 
     def add_event(self, e, level="info"):
+        if level == "error":
+            print >> sys.stderr, e
         if self.eventlog:
             print >> self.outfile, e
             self.outfile.flush()
