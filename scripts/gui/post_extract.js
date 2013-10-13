@@ -43,7 +43,7 @@ require(["dojo/promise/all"], function(all) {
         
       }
       
-      var key = "<span class=openDetail data-flow-id="+parseInt(flow.id)+">"+_.escape(RequestUtils.getFullPath(flow.request))+"</span>";
+      var key = "<span class='openDetail' data-flow-id="+parseInt(flow.id)+">"+_.escape(RequestUtils.getFullPath(flow.request))+"</span>";
       data[key] = prettyData;
     }
     

@@ -14,6 +14,9 @@ define([
 ], function(require, declare, lang, domConstruct, BorderContainer, _DetailViewMixin, ReportOutput, ReportEditor, reportContext) {
 	return declare([BorderContainer, _DetailViewMixin], {
 		design: "sidebar",
+        constructor: function(){
+            this.destroyCallbacks = [];
+        },
 		postCreate: function() {
 			var self = this;
 
@@ -27,6 +30,8 @@ define([
 				splitter: true,
 				submitClick: function() {
 					var code = self.reportEditor.getCode();
+                    //Delete old report script
+                    self.fireDestroyListener();
 					if (self.detailView)
 						self.detailView.destroyRecursive();
 					domConstruct.empty(self.reportOutput.out);
@@ -45,11 +50,7 @@ define([
 								showDetails: self.showDetails.bind(self)
 							},
 							out: self.reportOutput.out,
-                            define: function(){
-                                var ret = define.apply(this, arguments);
-                                console.log(this, arguments, ret);
-                                return ret;
-                            }
+                            addDestroyListener: self.addDestroyListener.bind(self)
 						});
 
                         //All dependencies are cached by the AMD loader by default -> uncache ReportScript dependencies
@@ -90,6 +91,19 @@ define([
 		},
 		_onShow: function() {
 			this.reportEditor._onShow(); //Delegate _onShow to avoid sizing issues with CodeMirror
-		}
+		},
+        fireDestroyListener: function(){
+            this.destroyCallbacks.forEach(function(cb){
+                try {
+                    cb();
+                } catch(e) {
+                    console.error(e);
+                }
+            });
+            this.destroyCallbacks = [];
+        },
+        addDestroyListener: function(func) {
+            this.destroyCallbacks.push(func);
+        }
 	});
 });
