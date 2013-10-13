@@ -168,17 +168,18 @@ define(["lodash",
 			return def;
 		},
 		deleteFileClick: function() {
-			var del = window.prompt("Do you really want to delete " + this.filename + "?\nEnter \"" + this.filename + "\" to continue.");
-			if (del === this.filename) {
-				this.save().then(function() { //We need to save here as .load() calls .save() and .save() should be already done.
-					var index = this.files.indexOf(this.filename);
-					this.files.splice(index, 1); //Remove file from list
-					var nextIndex = index % this.files.length; //modulo in case we're deleting the last file
-					this.setStatus("Delete...", true);
-					request.del(this.api_path + this.filename).then(function() {
-						this.load(this.files[nextIndex]);
-					});
-				});
+            var self = this;
+			var del = window.prompt("Do you really want to delete " + self.filename + "?\nEnter \"" + self.filename + "\" to continue.");
+			if (del === self.filename) {
+				self.save().then(function() { //We need to save here as .load() calls .save() and .save() should be already done.
+					var index = self.files.indexOf(self.filename);
+					self.files.splice(index, 1); //Remove file from list
+					var nextIndex = index % self.files.length; //modulo in case we're deleting the last file
+					self.setStatus("Delete...", true);
+					request.del(self.api_path + self.filename).then(function() {
+						self.load(self.files[nextIndex]);
+                    });
+                });
 			}
 		},
 		loadNext: function(i) {
@@ -194,7 +195,7 @@ define(["lodash",
 		},
 		load: function(filename) {
 			var self = this;
-			this.save().then(function() {
+			self.save().then(function() {
 				self.setStatus("Load...", true);
 				request.get(self.api_path + filename).then(function(code) {
 					self.codeMirror.setValue(code);

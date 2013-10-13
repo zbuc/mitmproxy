@@ -49,11 +49,11 @@ define(["dojo/_base/declare",
 				var selectedRow = Object.keys(self.grid.selection)[0];
 				self.showDetails(self.grid.row(selectedRow).data);
 			});
-            this.grid.addKeyHandler(37, function() { //ENTER
+            this.grid.addKeyHandler(37, function() { //LEFT
                 if(self.detailView)
                     self.detailView.back();
 			});
-            this.grid.addKeyHandler(39, function() { //ENTER
+            this.grid.addKeyHandler(39, function() { //RIGHT
                 if(self.detailView)
                     self.detailView.forward();
 			});

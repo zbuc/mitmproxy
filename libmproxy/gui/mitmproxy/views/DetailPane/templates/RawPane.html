@@ -4,7 +4,7 @@
 </ul>
 <h5 class="no-text-overflow">
 	<span data-bind="textContent: RequestUtils.getFullPath(request)"></span><br>
-	<small data-bind="textContent: RequestUtils.getQueryString(request)"></small>
+	<small data-bind="textContent: RequestUtils.getQueryString(request) || '&nbsp;'"></small>
 </h5>
 
 <div class="clearfix"></div>

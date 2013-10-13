@@ -31,21 +31,28 @@ define([
 						self.detailView.destroyRecursive();
 					domConstruct.empty(self.reportOutput.out);
 
-					var _mid;
+					var _mid, _reportContext;
+
 					try {
 
 						/*jshint evil:true, withstmt:true*/
 						// https://developers.google.com/closure/compiler/docs/compilation_levels
 						// Compilation [...] always preserves the functionality of syntactically valid JavaScript, 
 						// provided that the code does not access local variables using string names (by using eval() statements, for example).
-						window._reportPaneExterns = lang.mixin({}, reportContext, {
+                        _reportContext = window.reportContext;
+						window.reportContext = lang.mixin({}, reportContext, {
 							detailView: {
 								showDetails: self.showDetails.bind(self)
 							},
-							out: self.reportOutput.out
+							out: self.reportOutput.out,
+                            define: function(){
+                                var ret = define.apply(this, arguments);
+                                console.log(this, arguments, ret);
+                                return ret;
+                            }
 						});
 
-                        //All dependencies are cached by the AMD loader by default -> uncache
+                        //All dependencies are cached by the AMD loader by default -> uncache ReportScript dependencies
                         for(var k in require.modules) {
                             if(k.indexOf("ReportScripts") === 0)
                                 delete require.modules[k];
@@ -54,7 +61,8 @@ define([
 						_mid = require.module.mid;
 						require.module.mid = "ReportScripts/" + self.reportEditor.filename;
 
-						with(window._reportPaneExterns) {
+						//noinspection WithStatementJS
+                        with(window.reportContext) {
 							eval(code);
 						}
 
@@ -62,13 +70,15 @@ define([
 
 						//TODO: This is ugly.
 						self.reportOutput.out.innerHTML = "<pre>" + e.message + "\n\n" + e.stack.replace(/http.+?\/\/.+?\//g, "") + "</pre>";
-						console.log(e);
+						console.error(e);
 						window.mitmproxy.exception = e;
 
 					} finally {
 
-						delete window._reportPaneExterns;
-						require.module.mid = _mid;
+						//noinspection JSUnusedAssignment
+                        window.reportContext = _reportContext;
+						//noinspection JSUnusedAssignment
+                        require.module.mid = _mid;
 
 					}
 				}
