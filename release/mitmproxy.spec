@@ -1,7 +1,6 @@
 # -*- mode: python -*-
 # PyInstaller Spec File
 
-import os
 from PyInstaller.build import *
 
 scripts = ['mitmdump', 'mitmproxy-gui']
@@ -10,6 +9,9 @@ if not os.name == "nt":
 
 analyses = list(Analysis(scripts=['../dist/%s' % s]) for s in scripts)
 
+# If we use MERGE, our binaries break
+# Alternatively, we could exclude binaries and save them in the folder,
+# but that looks ugly and makes them less portable. 6MB is reasonable.
 #merge_info = []
 #for i, a in enumerate(analyses):
 #    merge_info.append((a, scripts[i], scripts[i] + '.exe'))
@@ -20,13 +22,16 @@ scripts_tree = Tree('../dist/scripts', prefix='scripts')
 
 executables = []
 for i, a in enumerate(analyses):
-    executables += [EXE(PYZ(a.pure),
-              a.scripts,
-              a.binaries,
-              a.zipfiles,
-              a.datas,
-              gui_tree,
-              scripts_tree,
-              name=scripts[i] + '.exe',
-              upx=True,
-              console=True)]
+    pyz = PYZ(a.pure)
+    executables += [
+        # a.binaries,
+        EXE(pyz,
+            a.scripts,
+            a.binaries,
+            # exclude_binaries=True,
+            name=scripts[i] + '.exe',
+            console=True)]
+COLLECT(gui_tree,
+        scripts_tree,
+        *executables,
+        name="dist")
