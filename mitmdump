@@ -7,7 +7,7 @@ if __name__ == '__main__':
     dump.DumpMaster.add_arguments(parser)
 
     options = parser.parse_args()
-    server = proxy.get_server(parser,options)
+    server = proxy.get_server(parser, options)
 
     m = dump.DumpMaster(server, options)
     def cleankill(*args, **kwargs):

@@ -1,9 +1,7 @@
-import sys, os, string, socket, time
-import shutil, tempfile, threading
-import SocketServer
+import sys, os, socket, time, threading
 from argparse import ArgumentTypeError
 from OpenSSL import SSL
-from netlib import odict, tcp, http, wsgi, certutils, http_status, http_auth
+from netlib import tcp, http, wsgi, certutils, http_status, http_auth
 import utils, flow, version, platform, controller
 from cmdline import parse_file_argument, lazy_const, raiseIfNone
 
@@ -94,7 +92,7 @@ class RequestReplayThread(threading.Thread):
                 server.rfile, r.method, self.config.body_size_limit
             )
             response = flow.Response(
-                self.flow.request, httpversion, code, msg, headers, content, server.cert, 
+                self.flow.request, httpversion, code, msg, headers, content, server.cert,
                 server.rfile.first_byte_timestamp
             )
             self.channel.ask(response)
@@ -558,6 +556,7 @@ def get_transparent():
         sslports = TRANSPARENT_SSL_PORTS
     )
 
+
 # Command-line utils
 def add_arguments(parser):
 
@@ -569,7 +568,7 @@ def add_arguments(parser):
     )
     mgroup.add_argument(
         "-T", dest="transparent_proxy",
-        action=lazy_const(get_transparent), default=None,
+        action=lazy_const(get_transparent), default=None, nargs=0,
         help="Set transparent proxy mode.")
 
     group = parser.add_argument_group("SSL")
@@ -584,30 +583,37 @@ def add_arguments(parser):
         help="Client certificate directory."
     )
 
+    group = parser.add_argument_group(
+        "Proxy Authentication",
+        """
+            Specify which users are allowed to access the proxy and the method
+            used for authenticating them. These options are ignored if the
+            proxy is in transparent or reverse proxy mode.
+        """)
+    auth_group = group.add_mutually_exclusive_group()
+    auth_group.add_argument(
+        "--nonanonymous",
+        action=http_auth.NonanonymousAuthAction, nargs=0,
+        help="Allow access to any user long as a credentials are specified."
+    )
+    auth_group.add_argument(
+        "--singleuser",
+        action=http_auth.SingleuserAuthAction,
+        metavar="user:pass",
+        help="Allows basic auth access to a single user."
+    )
+    auth_group.add_argument(
+        "--htpasswd",
+        action=http_auth.HtpasswdAuthAction,
+        metavar="PATH",
+        help="Allow access to users specified in an Apache htpasswd file."
+    )
 
 def process_proxy_options(parser, options):
     cacert = os.path.join(options.confdir, "mitmproxy-ca.pem")
     cacert = os.path.expanduser(cacert)
     if not os.path.exists(cacert):
         certutils.dummy_ca(cacert)
-
-    if (options.auth_nonanonymous or options.auth_singleuser or options.auth_htpasswd):
-        if options.auth_singleuser:
-            if len(options.auth_singleuser.split(':')) != 2:
-                return parser.error("Invalid single-user specification. Please use the format username:password")
-            username, password = options.auth_singleuser.split(':')
-            password_manager = http_auth.PassManSingleUser(username, password)
-        elif options.auth_nonanonymous:
-            password_manager = http_auth.PassManNonAnon()
-        elif options.auth_htpasswd:
-            try:
-                password_manager = http_auth.PassManHtpasswd(options.auth_htpasswd)
-            except ValueError, v:
-                return parser.error(v.message)
-        authenticator = http_auth.BasicProxyAuth(password_manager, "mitmproxy")
-    else:
-        authenticator = http_auth.NullProxyAuth(None)
-
     return ProxyConfig(
         certfile = options.cert,
         cacert = cacert,
@@ -616,7 +622,7 @@ def process_proxy_options(parser, options):
         no_upstream_cert = options.no_upstream_cert,
         reverse_proxy = options.reverse_proxy,
         transparent_proxy = options.transparent_proxy,
-        authenticator = authenticator
+        authenticator = (options.authenticator if hasattr(options, "authenticator") else None)
     )
 
 def get_server(parser,options):

@@ -344,31 +344,3 @@ def add_common_arguments(parser):
         metavar="PATTERN",
         help="Header set pattern."
     )
-
-    group = parser.add_argument_group(
-        "Proxy Authentication",
-        """
-            Specify which users are allowed to access the proxy and the method
-            used for authenticating them. These options are ignored if the
-            proxy is in transparent or reverse proxy mode.
-        """
-    )
-    user_specification_group = group.add_mutually_exclusive_group()
-    user_specification_group.add_argument(
-        "--nonanonymous",
-        action="store_true", dest="auth_nonanonymous",
-        help="Allow access to any user long as a credentials are specified."
-    )
-
-    user_specification_group.add_argument(
-        "--singleuser",
-        action="store", dest="auth_singleuser", type=str,
-        metavar="USER",
-        help="Allows access to a a single user, specified in the form username:password."
-    )
-    user_specification_group.add_argument(
-        "--htpasswd",
-        action="store", dest="auth_htpasswd", type=argparse.FileType('r'),
-        metavar="PATH",
-        help="Allow access to users specified in an Apache htpasswd file."
-    )
