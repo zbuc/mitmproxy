@@ -1,4 +1,3 @@
-import proxy
 import version
 import re, filt
 import argparse
@@ -100,6 +99,9 @@ def parse_setheader(s):
 
 
 def parse_file_argument(expanduser=False, required_dir=False, required_file=False):
+    """
+    Returns a function that processes a path string with the options.
+    """
     def _parser(path):
         if expanduser:
             path = os.path.expanduser(path)
@@ -113,9 +115,10 @@ def parse_file_argument(expanduser=False, required_dir=False, required_file=Fals
 
 def raiseIfNone(func):
     """
-    Calls func with given parameter.
-    If func returns None, an error is raised.
-    Otherwise, the return value of func is returned.
+    Function wrapper that raises an ArgumentTypeError when the return value is None.
+    Usage example:
+        parser.add_argument( type=raiseIfNone(utils.parse_proxy_spec), ...)
+
     """
     def _check(val):
         r = func(val)
@@ -126,6 +129,11 @@ def raiseIfNone(func):
 
 
 def lazy_const(func):
+    """
+    Sets the result of func() as argument value if the parameter is specified.
+    This makes sure that proxy.get_transparent() only gets called when the -T switch
+    has been supplied as it raises an error on windows.
+    """
     class StoreLazyConstAction(Action):
         def __call__(self, parser, namespace, values, option_string=None):
             setattr(namespace, self.dest, func())
@@ -174,17 +182,19 @@ def add_common_arguments(parser):
     )
     parser.add_argument(
         "-s",
-        action="append", type=lambda x: shlex.split(x,posix=(os.name != "nt")), dest="scripts", default=[],
+        action="append", type=lambda x: shlex.split(x, posix=(os.name != "nt")), dest="scripts", default=[],
         metavar='"script.py --bar"',
         help="Run a script. Surround with quotes to pass script arguments. Can be passed multiple times."
     )
+
+    import proxy
+    proxy.add_arguments(parser)
+
     parser.add_argument(
         "-t",
         action="store", dest="stickycookie", default=None, metavar="FILTER",
         help="Set sticky cookie filter. Matched against requests."
     )
-
-    proxy.add_arguments(parser)
 
     parser.add_argument(
         "-u",
