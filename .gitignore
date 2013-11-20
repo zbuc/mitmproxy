@@ -1,6 +1,7 @@
 MANIFEST
 /build
 /dist
+/release/build
 /tmp
 /doc
 /venv
