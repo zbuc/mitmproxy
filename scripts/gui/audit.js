@@ -3,8 +3,11 @@
  */
 
 //you can get the flow id by hovering over the leftmost 10px of the traffic table.
-var flow_id = 2;
+var flow_id = 0;
 var flow = traffic.get(flow_id).then(function(flow){
+  
+  if(!flow.response)
+    return alert("Flow does not have a response!");
 
   domConstruct.create("h2",{innerHTML:"Audit for "+_.escape(RequestUtils.getFullPath(flow.request))},out);
   domConstruct.create(

@@ -5,6 +5,7 @@ import base64
 import flask
 import filt
 import httplib
+import sys
 from flask import request, send_from_directory, Response, session, redirect, url_for
 from flask.json import jsonify, dumps
 from flask.helpers import safe_join
@@ -14,7 +15,18 @@ from werkzeug.http import parse_range_header
 from werkzeug.utils import secure_filename
 from libmproxy.version import VERSION
 
-mapp = flask.Flask(__name__)
+
+class FFlask(flask.Flask):
+    """
+    PyInstaller compatibility fix: We we are running frozen, use dirname(sys.executable) as root dir.
+    """
+    def __init__(self, *args, **kwargs):
+        flask.Flask.__init__(self, *args, **kwargs)
+        if getattr(sys, 'frozen', False):
+            self.root_path = os.path.abspath(os.path.join(os.path.dirname(sys.executable), "libmproxy"))
+
+mapp = FFlask(__name__)
+
 mapp.debug = True
 mapp.secret_key = os.urandom(32)
 
@@ -89,7 +101,7 @@ def app():
 
 @mapp.route('/app/<path:filename>')
 def app_static(filename):
-    return send_from_directory(mapp.root_path + './gui/', filename)
+    return send_from_directory(os.path.join(mapp.root_path, 'gui'), filename)
 
 
 @mapp.route("/api/config")

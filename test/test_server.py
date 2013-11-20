@@ -56,7 +56,7 @@ class CommonMixin:
 
 class AppMixin:
     def test_app(self):
-        ret = self.app("/")
+        ret = self.app("/app/")
         assert ret.status_code == 200
         assert "mitmproxy" in ret.content
 
