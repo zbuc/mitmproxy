@@ -1,5 +1,5 @@
 import sys, os, socket, time, threading
-from argparse import ArgumentTypeError
+from argparse import ArgumentTypeError, SUPPRESS
 from OpenSSL import SSL
 from netlib import tcp, http, wsgi, certutils, http_status, http_auth
 import utils, flow, version, platform, controller
@@ -297,14 +297,15 @@ class ProxyHandler(tcp.BaseHandler):
 
     def find_cert(self, cc, host, port, sni):
         if self.config.certfile:
-            return certutils.SSLCert.from_pem(file(self.config.certfile, "r").read())
+            with open(self.config.certfile, "rb") as f:
+                return certutils.SSLCert.from_pem(f.read())
         else:
             sans = []
             if not self.config.no_upstream_cert:
                 conn = self.get_server_connection(cc, "https", host, port, sni)
                 sans = conn.cert.altnames
                 host = conn.cert.cn.decode("utf8").encode("idna")
-            ret = self.config.certstore.get_cert(host, sans, self.config.cacert)
+            ret = self.server.certstore.get_cert(host, sans, self.config.cacert)
             if not ret:
                 raise ProxyError(502, "Unable to generate dummy cert.")
             return ret
@@ -497,6 +498,7 @@ class ProxyServer(tcp.TCPServer):
         except socket.error, v:
             raise ProxyServerError('Error starting proxy server: ' + v.strerror)
         self.channel = None
+        self.certstore = certutils.CertStore()
         self.apps = AppRegistry()
 
     def start_slave(self, klass, channel):
@@ -560,26 +562,45 @@ def get_transparent():
 # Command-line utils
 def add_arguments(parser):
 
-    mgroup = parser.add_mutually_exclusive_group()
+    group = parser.add_argument_group("Proxy Options")
+    mgroup = group.add_mutually_exclusive_group()
     mgroup.add_argument(
-        "-P",
-        action="store", dest="reverse_proxy", default=None, type=raiseIfNone(utils.parse_proxy_spec),
+        "-P", dest="reverse_proxy", default=None,
+        action="store", type=raiseIfNone(utils.parse_proxy_spec),
         help="Reverse proxy to upstream server: http[s]://host[:port]"
     )
     mgroup.add_argument(
-        "-T", dest="transparent_proxy",
-        action=lazy_const(get_transparent), default=None, nargs=0,
+        "-T", dest="transparent_proxy", default=None,
+        action=lazy_const(get_transparent), nargs=0,
         help="Set transparent proxy mode.")
+
+    group.add_argument(
+        "-Z",
+        action="store", dest="body_size_limit", default=None,
+        type=utils.parse_size,  metavar="SIZE",
+        help="Byte size limit of HTTP request and response bodies."\
+             " Understands k/m/g suffixes, i.e. 3m for 3 megabytes."
+    )
+    group.add_argument(
+        "--no-upstream-cert", dest="no_upstream_cert", default=False,
+        action="store_true",
+        help="Don't connect to upstream server to look up certificate details."
+    )
 
     group = parser.add_argument_group("SSL")
     group.add_argument(
-        "--cert", action="store",
-        type=parse_file_argument(expanduser=True, required_file=True), dest="cert", default=None,
+        "--cert", dest="certfile", default=None,
+        action="store", type=parse_file_argument(expanduser=True, required_file=True),
         help="User-created SSL certificate file."
     )
     group.add_argument(
-        "--client-certs", action="store",
-        type=parse_file_argument(expanduser=True, required_dir=True), dest="clientcerts", default=None,
+        "--ca-cert", dest="cacert", default=None,
+        action="store", type=parse_file_argument(expanduser=True, required_file=True),
+        help="User-created SSL certificate file."
+    )
+    group.add_argument(
+        "--client-certs", dest="clientcerts", default=None,
+        action="store", type=parse_file_argument(expanduser=True, required_dir=True),
         help="Client certificate directory."
     )
 
@@ -592,26 +613,29 @@ def add_arguments(parser):
         """)
     auth_group = group.add_mutually_exclusive_group()
     auth_group.add_argument(
-        "--nonanonymous",
+        "--no-authentication", dest="authenticator", default=None,
+        help=SUPPRESS
+    )
+    auth_group.add_argument(
+        "--nonanonymous", dest="authenticator",
         action=http_auth.NonanonymousAuthAction, nargs=0,
         help="Allow access to any user long as a credentials are specified."
     )
     auth_group.add_argument(
-        "--singleuser",
-        action=http_auth.SingleuserAuthAction,
-        metavar="user:pass",
+        "--singleuser", dest="authenticator",
+        action=http_auth.SingleuserAuthAction, metavar="user:pass",
         help="Allows basic auth access to a single user."
     )
     auth_group.add_argument(
-        "--htpasswd",
-        action=http_auth.HtpasswdAuthAction,
-        metavar="PATH",
+        "--htpasswd", dest="authenticator",
+        action=http_auth.HtpasswdAuthAction, metavar="PATH",
         help="Allow access to users specified in an Apache htpasswd file."
     )
 
+# FIXME: Remove
+"""
 def process_proxy_options(parser, options):
     cacert = os.path.join(options.confdir, "mitmproxy-ca.pem")
-    cacert = os.path.expanduser(cacert)
     if not os.path.exists(cacert):
         certutils.dummy_ca(cacert)
     return ProxyConfig(
@@ -623,16 +647,21 @@ def process_proxy_options(parser, options):
         reverse_proxy = options.reverse_proxy,
         transparent_proxy = options.transparent_proxy,
         authenticator = (options.authenticator if hasattr(options, "authenticator") else None)
-    )
+    )"""
 
-def get_server(parser,options):
-    config = process_proxy_options(parser, options)
+
+def get_server(options):
+    # Before we create a server, make sure that a cacert exists.
+    cacert = os.path.join(options.confdir, "mitmproxy-ca.pem")
+    if not os.path.exists(cacert):
+        certutils.dummy_ca(cacert)
+    options.cacert = cacert
 
     if options.no_server:
-        return DummyServer(config)
+        return DummyServer(options)
     else:
         try:
-            return ProxyServer(config, options.port, options.addr)
+            return ProxyServer(options, options.port, options.addr)
         except ProxyServerError, v:
             print >> sys.stderr, "%s: %s" % (sys.argv[0], v.args[0])
             sys.exit(1)

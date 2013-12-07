@@ -1,6 +1,6 @@
 import argparse
 from libmproxy import proxy, flow, cmdline
-import tutils
+import tutils, test_cmdline
 from libpathod import test
 from netlib import http, tcp
 import mock
@@ -59,32 +59,17 @@ class TestServerConnection:
         sc.connection.flush = mock.Mock(side_effect=tcp.NetLibDisconnect)
         sc.terminate()
 
-
-class MockParser:
-    def __init__(self):
-        self.err = None
-
-    def error(self, e):
-        self.err = e
-
-    def __repr__(self):
-        return "ParseError(%s)"%self.err
-
-
 class TestProcessProxyOptions:
     def p(self, *args):
-        parser = argparse.ArgumentParser()
+        parser = test_cmdline.MockParser()
         cmdline.add_common_arguments(parser)
-        opts = parser.parse_args(args=args)
-        m = MockParser()
-        return m, proxy.process_proxy_options(m, opts)
+        return parser.parse_args(args=args)
 
     def assert_err(self, err, *args):
-        m, p = self.p(*args)
-        assert err.lower() in m.err.lower()
+        tutils.raises(err, self.p, *args)
 
     def assert_noerr(self, *args):
-        m, p = self.p(*args)
+        p = self.p(*args)
         assert p
         return p
 
@@ -105,10 +90,10 @@ class TestProcessProxyOptions:
 
     @mock.patch("libmproxy.platform.resolver")
     def test_transparent_reverse(self, o):
-        self.assert_err("can't set both", "-P", "reverse", "-T")
+        self.assert_err("not allowed with argument", "-P", "http://reverse", "-T")
         self.assert_noerr("-T")
         assert o.call_count == 1
-        self.assert_err("invalid reverse proxy", "-P", "reverse")
+        self.assert_err("invalid value: reverse", "-P", "reverse")
         self.assert_noerr("-P", "http://localhost")
 
     def test_certs(self):

@@ -1,13 +1,10 @@
-import version
-import re, filt
-import argparse
-import shlex
-import os
+import re, shlex, os
 from argparse import Action, ArgumentTypeError
-from utils import parse_size, parse_proxy_spec
+import version, filt
 
 APP_DOMAIN = "mitm"
 APP_IP = "1.1.1.1"
+
 
 def _parse_hook(s):
     sep, rem = s[0], s[1:]
@@ -107,7 +104,7 @@ def parse_file_argument(expanduser=False, required_dir=False, required_file=Fals
             path = os.path.expanduser(path)
         if required_dir and not os.path.isdir(path):
             raise ArgumentTypeError("Directory does not exist or is not a directory: %s" % path)
-        if required_dir and not os.path.isfile(path):
+        if required_file and not os.path.isfile(path):
             raise ArgumentTypeError("File does not exist os is not a file: %s" % path)
         return path
     return _parser
@@ -147,8 +144,8 @@ def add_common_arguments(parser):
     )
     parser.add_argument(
         "-b",
-        action="store", type = str, dest="addr", default='',
-        help = "Address to bind proxy to (defaults to all interfaces)"
+        action="store", type=str, dest="addr", default='',
+        help="Address to bind proxy to (defaults to all interfaces)"
     )
     parser.add_argument(
         "--anticache",
@@ -156,9 +153,9 @@ def add_common_arguments(parser):
         help="Strip out request headers that might cause the server to return 304-not-modified."
     )
     parser.add_argument(
-        "--confdir",
-        action="store", type = str, dest="confdir", default='~/.mitmproxy',
-        help = "Configuration directory. (~/.mitmproxy)"
+        "--confdir", dest="confdir", default=os.path.expanduser('~/.mitmproxy'),
+        action="store", type=parse_file_argument(expanduser=True, required_dir=True),
+        help="Configuration directory. (~/.mitmproxy)"
     )
     parser.add_argument(
         "-e",
@@ -172,8 +169,8 @@ def add_common_arguments(parser):
     )
     parser.add_argument(
         "-p",
-        action="store", type = int, dest="port", default=8080,
-        help = "Proxy service port."
+        action="store", type=int, dest="port", default=8080,
+        help="Proxy service port."
     )
     parser.add_argument(
         "-r",
@@ -223,22 +220,9 @@ def add_common_arguments(parser):
         help="Try to convince servers to send us un-compressed data."
     )
     parser.add_argument(
-        "-Z",
-        action="store", dest="body_size_limit", default=None,
-        type=parse_size,  metavar="SIZE",
-        help="Byte size limit of HTTP request and response bodies."\
-             " Understands k/m/g suffixes, i.e. 3m for 3 megabytes."
-    )
-    parser.add_argument(
         "--host",
         action="store_true", dest="showhost", default=False,
         help="Use the Host header to construct URLs for display."
-    )
-
-    parser.add_argument(
-        "--no-upstream-cert", default=False,
-        action="store_true", dest="no_upstream_cert",
-        help="Don't connect to upstream server to look up certificate details."
     )
 
     group = parser.add_argument_group("Web App")
@@ -271,7 +255,6 @@ def add_common_arguments(parser):
         help='Authentication string for the API. Use "NO_AUTH" to disable authentication.'
     )
 
-
     group = parser.add_argument_group("Client Replay")
     group.add_argument(
         "-c",
@@ -294,12 +277,12 @@ def add_common_arguments(parser):
         "--rheader",
         action="append", dest="rheaders", type=str,
         help="Request headers to be considered during replay. "
-           "Can be passed multiple times."
+        "Can be passed multiple times."
     )
     group.add_argument(
         "--norefresh",
         action="store_false", dest="refresh_server_playback",
-        help= "Disable response refresh, "
+        help="Disable response refresh, "
         "which updates times in cookies and headers for replayed responses."
     )
     group.add_argument(
@@ -325,7 +308,7 @@ def add_common_arguments(parser):
     )
     group.add_argument(
         "--replace-from-file",
-        action="append", type=lambda x: parse_replace_hook(x,True), dest="replacements",
+        action="append", type=lambda x: parse_replace_hook(x, True), dest="replacements",
         metavar="PATH",
         help="Replacement pattern, where the replacement clause is a path to a file."
     )
