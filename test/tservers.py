@@ -77,20 +77,14 @@ class ProxTestBase:
     clientcerts = False
     certfile = None
     no_upstream_cert = False
-    authenticator = None
+    authenticator = None  # syntax as on the command line: ["--single-user", "test:test"]
     masterclass = TestMaster
     @classmethod
     def setupAll(cls):
         cls.tqueue = Queue.Queue()
         cls.server = libpathod.test.Daemon(ssl=cls.ssl, ssloptions=cls.ssloptions)
         cls.server2 = libpathod.test.Daemon(ssl=cls.ssl, ssloptions=cls.ssloptions)
-        pconf = cls.get_proxy_config()
-        config = proxy.ProxyConfig(
-            no_upstream_cert = cls.no_upstream_cert,
-            cacert = tutils.test_data.path("data/serverkey.pem"),
-            authenticator = cls.authenticator,
-            **pconf
-        )
+        config = cls.get_proxy_config()
         tmaster = cls.masterclass(cls.tqueue, config)
         cls.proxy = ProxyThread(tmaster)
         cls.proxy.start()
@@ -126,12 +120,15 @@ class ProxTestBase:
 
     @classmethod
     def get_proxy_config(cls):
-        d = dict()
+        opts = ["--no-upstream-cert",
+                "--ca-cert", tutils.test_data.path("data/serverkey.pem")]
         if cls.clientcerts:
-            d["clientcerts"] = tutils.test_data.path("data/clientcert")
+            opts.extend(["--client-certs", tutils.test_data.path("data/clientcert")])
         if cls.certfile:
-            d["certfile"]  =tutils.test_data.path("data/testkey.pem")
-        return d
+            opts.extend(["--cert", tutils.test_data.path("data/testkey.pem")])
+        if cls.authenticator:
+            opts.extend(cls.authenticator)
+        return tutils.toptions(*opts)
 
 
 class HTTPProxTest(ProxTestBase):

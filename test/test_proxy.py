@@ -1,6 +1,6 @@
 import argparse
 from libmproxy import proxy, flow, cmdline
-import tutils, test_cmdline
+import tutils
 from libpathod import test
 from netlib import http, tcp
 import mock
@@ -39,7 +39,7 @@ class TestServerConnection:
         self.d.shutdown()
 
     def test_simple(self):
-        sc = proxy.ServerConnection(proxy.ProxyConfig(), "http", self.d.IFACE, self.d.port, "host.com")
+        sc = proxy.ServerConnection(tutils.toptions(), "http", self.d.IFACE, self.d.port, "host.com")
         sc.connect()
         r = tutils.treq()
         r.path = "/p/200:da"
@@ -53,15 +53,16 @@ class TestServerConnection:
         sc.terminate()
 
     def test_terminate_error(self):
-        sc = proxy.ServerConnection(proxy.ProxyConfig(), "http", self.d.IFACE, self.d.port, "host.com")
+        sc = proxy.ServerConnection(tutils.toptions(), "http", self.d.IFACE, self.d.port, "host.com")
         sc.connect()
         sc.connection = mock.Mock()
         sc.connection.flush = mock.Mock(side_effect=tcp.NetLibDisconnect)
         sc.terminate()
 
+
 class TestProcessProxyOptions:
     def p(self, *args):
-        parser = test_cmdline.MockParser()
+        parser = tutils.MockParser()
         cmdline.add_common_arguments(parser)
         return parser.parse_args(args=args)
 

@@ -1,8 +1,9 @@
-import os, shutil, tempfile
+import os, shutil, tempfile, argparse
 from contextlib import contextmanager
-from libmproxy import flow, utils, controller
+from libmproxy import flow, utils, controller, cmdline
 from netlib import certutils
 from nose.plugins.skip import SkipTest
+
 
 def _SkipWindows():
     raise SkipTest("Skipped on Windows.")
@@ -11,6 +12,7 @@ def SkipWindows(fn):
         return _SkipWindows
     else:
         return fn
+
 
 def treq(conn=None):
     if not conn:
@@ -52,7 +54,6 @@ def tflow_err():
     f.error = flow.Error(r, "error")
     f.error.reply = controller.DummyReply()
     return f
-
 
 
 @contextmanager
@@ -106,3 +107,20 @@ def raises(exc, obj, *args, **kwargs):
     raise AssertionError("No exception raised.")
 
 test_data = utils.Data(__name__)
+
+
+
+class MockParser(argparse.ArgumentParser):
+    """
+    argparse.ArgumentParser sys.exits() by default.
+    Make it more testable by throwing an exception instead.
+    """
+    def error(self, message):
+        raise Exception(message)
+
+
+def toptions(*args):
+    parser = MockParser()
+    cmdline.add_common_arguments(parser)
+    x = parser.parse_args(args=args)
+    return parser.parse_args(args=args)

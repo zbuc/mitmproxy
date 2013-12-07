@@ -4,15 +4,6 @@ import tutils
 import os.path
 
 
-class MockParser(argparse.ArgumentParser):
-    """
-    argparse.ArgumentParser sys.exits() by default.
-    Make it more testable by throwing an exception instead.
-    """
-    def error(self, message):
-        raise Exception(message)
-
-
 def test_parse_replace_hook():
     x = cmdline.parse_replace_hook("/foo/bar/voing")
     assert x == ("foo", "bar", "voing")
@@ -44,6 +35,7 @@ def test_parse_setheaders():
     x = cmdline.parse_setheader("/foo/bar/voing")
     assert x == ("foo", "bar", "voing")
 
+
 def test_shlex():
     """
     shlex.split assumes posix=True by default, we do manual detection for windows.
@@ -51,23 +43,24 @@ def test_shlex():
     """
     absfilepath = os.path.normcase(os.path.abspath(__file__))
 
-    parser = MockParser()
+    parser = tutils.MockParser()
     cmdline.add_common_arguments(parser)
     opts = parser.parse_args(args=["-s",absfilepath])
     
     assert os.path.isfile(opts.scripts[0][0])
 
+
 def test_common():
-    parser = MockParser()
+    parser = tutils.MockParser()
     cmdline.add_common_arguments(parser)
     opts = parser.parse_args(args=[])
 
-    opts = parser.parse_args(args=["-t","foo","-u","foo"])
+    opts = parser.parse_args(args=["-t", "foo", "-u", "foo"])
 
     assert opts.stickycookie == "foo"
     assert opts.stickyauth == "foo"
 
-    opts = parser.parse_args(args=["--setheader","/foo/bar/voing"])
+    opts = parser.parse_args(args=["--setheader", "/foo/bar/voing"])
     assert opts.setheaders == [("foo", "bar", "voing")]
 
     tutils.raises(
@@ -76,7 +69,7 @@ def test_common():
         ["--setheader","//"]
     )
 
-    opts = parser.parse_args(args=["--replace","/foo/bar/voing"])
+    opts = parser.parse_args(args=["--replace", "/foo/bar/voing"])
     assert opts.replacements == [("foo", "bar", "voing")]
 
     tutils.raises(
@@ -88,17 +81,17 @@ def test_common():
     tutils.raises(
         "could not read replace file",
         parser.parse_args,
-        ["--replace-from-file","/foo/bar/nonexistent"]
+        ["--replace-from-file", "/foo/bar/nonexistent"]
     )
 
     tutils.raises(
         "filter pattern",
         parser.parse_args,
-        ["--replace-from-file","/~/bar/nonexistent"]
+        ["--replace-from-file", "/~/bar/nonexistent"]
     )
 
     p = tutils.test_data.path("data/replace")
-    opts = parser.parse_args(args=["--replace-from-file",("/foo/bar/%s"%p)])
+    opts = parser.parse_args(args=["--replace-from-file", ("/foo/bar/%s"%p)])
     assert len(opts.replacements) == 1
     assert opts.replacements[0][2].strip() == "replacecontents"
 

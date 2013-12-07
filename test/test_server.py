@@ -61,7 +61,6 @@ class AppMixin:
         assert "mitmproxy" in ret.content
 
 
-
 class TestHTTP(tservers.HTTPProxTest, CommonMixin, AppMixin):
     def test_app_err(self):
         p = self.pathoc()
@@ -144,9 +143,8 @@ class TestHTTP(tservers.HTTPProxTest, CommonMixin, AppMixin):
         assert req.status_code == 400
 
 
-
 class TestHTTPAuth(tservers.HTTPProxTest):
-    authenticator = http_auth.BasicProxyAuth(http_auth.PassManSingleUser("test", "test"), "realm")
+    authenticator = ["--singleuser", "test:test"]
     def test_auth(self):
         assert self.pathod("202").status_code == 407
         p = self.pathoc()

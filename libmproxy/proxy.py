@@ -14,26 +14,12 @@ class ProxyError(Exception):
         self.code, self.msg, self.headers = code, msg, headers
 
     def __str__(self):
-        return "ProxyError(%s, %s)"%(self.code, self.msg)
+        return "ProxyError(%s, %s)" % (self.code, self.msg)
 
 
 class Log:
     def __init__(self, msg):
         self.msg = msg
-
-
-class ProxyConfig:
-    def __init__(self, certfile = None, cacert = None, clientcerts = None, no_upstream_cert=False, body_size_limit = None, reverse_proxy=None, transparent_proxy=None, authenticator=None):
-        self.certfile = certfile
-        self.cacert = cacert
-        self.clientcerts = clientcerts
-        self.no_upstream_cert = no_upstream_cert
-        self.body_size_limit = body_size_limit
-        self.reverse_proxy = reverse_proxy
-        self.transparent_proxy = transparent_proxy
-        self.authenticator = authenticator
-        self.certstore = certutils.CertStore()
-
 
 class ServerConnection(tcp.TCPClient):
     def __init__(self, config, scheme, host, port, sni):
@@ -73,6 +59,7 @@ class ServerConnection(tcp.TCPClient):
                 self.wfile.flush()
             except tcp.NetLibDisconnect: # pragma: no cover
                 pass
+
             self.connection.close()
 
 
@@ -148,7 +135,7 @@ class ProxyHandler(tcp.BaseHandler):
             self.log(
                 cc,
                 "switching connection", [
-                    "%s://%s:%s (sni=%s) -> %s://%s:%s (sni=%s)"%(
+                    "%s://%s:%s (sni=%s) -> %s://%s:%s (sni=%s)" % (
                         scheme, host, port, sni,
                         sc.scheme, sc.host, sc.port, sc.sni
                     )
@@ -180,7 +167,7 @@ class ProxyHandler(tcp.BaseHandler):
         self.log(
             cc, "disconnect",
             [
-                "handled %s requests"%cc.requestcount]
+                "handled %s requests" % cc.requestcount]
         )
         self.channel.tell(cd)
 
@@ -259,7 +246,7 @@ class ProxyHandler(tcp.BaseHandler):
                     self.send_response(response)
                     if request and http.request_connection_close(request.httpversion, request.headers):
                         return
-                    # We could keep the client connection when the server
+                        # We could keep the client connection when the server
                     # connection needs to go away.  However, we want to mimic
                     # behaviour as closely as possible to the client, so we
                     # disconnect.
@@ -267,7 +254,7 @@ class ProxyHandler(tcp.BaseHandler):
                         return
         except (IOError, ProxyError, http.HttpError, tcp.NetLibError), e:
             if hasattr(e, "code"):
-                cc.error = "%s: %s"%(e.code, e.msg)
+                cc.error = "%s: %s" % (e.code, e.msg)
             else:
                 cc.error = str(e)
 
@@ -276,7 +263,7 @@ class ProxyHandler(tcp.BaseHandler):
                 self.channel.ask(err)
                 self.log(
                     cc, cc.error,
-                    ["url: %s"%request.get_url()]
+                    ["url: %s" % request.get_url()]
                 )
             else:
                 self.log(cc, cc.error)
@@ -287,10 +274,10 @@ class ProxyHandler(tcp.BaseHandler):
 
     def log(self, cc, msg, subs=()):
         msg = [
-            "%s:%s: "%cc.address + msg
+            "%s:%s: " % cc.address + msg
         ]
         for i in subs:
-            msg.append("  -> "+i)
+            msg.append("  -> " + i)
         msg = "\n".join(msg)
         l = Log(msg)
         self.channel.tell(l)
@@ -323,7 +310,7 @@ class ProxyHandler(tcp.BaseHandler):
         orig = self.config.transparent_proxy["resolver"].original_addr(self.connection)
         if not orig:
             raise ProxyError(502, "Transparent mode failure: could not resolve original destination.")
-        self.log(client_conn, "transparent to %s:%s"%orig)
+        self.log(client_conn, "transparent to %s:%s" % orig)
 
         host, port = orig
         if port in self.config.transparent_proxy["sslports"]:
@@ -345,16 +332,16 @@ class ProxyHandler(tcp.BaseHandler):
             return None
         r = http.parse_init_http(line)
         if not r:
-            raise ProxyError(400, "Bad HTTP request line: %s"%repr(line))
+            raise ProxyError(400, "Bad HTTP request line: %s" % repr(line))
         method, path, httpversion = r
         headers = self.read_headers(authenticate=False)
         content = http.read_http_body_request(
-                    self.rfile, self.wfile, headers, httpversion, self.config.body_size_limit
-                )
+            self.rfile, self.wfile, headers, httpversion, self.config.body_size_limit
+        )
         return flow.Request(
-                    client_conn,httpversion, host, port, scheme, method, path, headers, content,
-                    self.rfile.first_byte_timestamp, utils.timestamp()
-               )
+            client_conn, httpversion, host, port, scheme, method, path, headers, content,
+            self.rfile.first_byte_timestamp, utils.timestamp()
+        )
 
     def read_request_proxy(self, client_conn):
         line = self.get_line(self.rfile)
@@ -367,10 +354,10 @@ class ProxyHandler(tcp.BaseHandler):
                 host, port, httpversion = connparts
                 headers = self.read_headers(authenticate=True)
                 self.wfile.write(
-                            'HTTP/1.1 200 Connection established\r\n' +
-                            ('Proxy-agent: %s\r\n'%self.server_version) +
-                            '\r\n'
-                            )
+                    'HTTP/1.1 200 Connection established\r\n' +
+                    ('Proxy-agent: %s\r\n' % self.server_version) +
+                    '\r\n'
+                )
                 self.wfile.flush()
                 dummycert = self.find_cert(client_conn, host, port, host)
                 sni = HandleSNI(
@@ -387,7 +374,7 @@ class ProxyHandler(tcp.BaseHandler):
         if self.proxy_connect_state:
             r = http.parse_init_http(line)
             if not r:
-                raise ProxyError(400, "Bad HTTP request line: %s"%repr(line))
+                raise ProxyError(400, "Bad HTTP request line: %s" % repr(line))
             method, path, httpversion = r
             headers = self.read_headers(authenticate=False)
 
@@ -396,22 +383,22 @@ class ProxyHandler(tcp.BaseHandler):
                 self.rfile, self.wfile, headers, httpversion, self.config.body_size_limit
             )
             return flow.Request(
-                        client_conn, httpversion, host, port, "https", method, path, headers, content,
-                        self.rfile.first_byte_timestamp, utils.timestamp()
-                   )
+                client_conn, httpversion, host, port, "https", method, path, headers, content,
+                self.rfile.first_byte_timestamp, utils.timestamp()
+            )
         else:
             r = http.parse_init_proxy(line)
             if not r:
-                raise ProxyError(400, "Bad HTTP request line: %s"%repr(line))
+                raise ProxyError(400, "Bad HTTP request line: %s" % repr(line))
             method, scheme, host, port, path, httpversion = r
             headers = self.read_headers(authenticate=True)
             content = http.read_http_body_request(
                 self.rfile, self.wfile, headers, httpversion, self.config.body_size_limit
             )
             return flow.Request(
-                        client_conn, httpversion, host, port, scheme, method, path, headers, content,
-                        self.rfile.first_byte_timestamp, utils.timestamp()
-                    )
+                client_conn, httpversion, host, port, scheme, method, path, headers, content,
+                self.rfile.first_byte_timestamp, utils.timestamp()
+            )
 
     def read_request_reverse(self, client_conn):
         line = self.get_line(self.rfile)
@@ -420,16 +407,16 @@ class ProxyHandler(tcp.BaseHandler):
         scheme, host, port = self.config.reverse_proxy
         r = http.parse_init_http(line)
         if not r:
-            raise ProxyError(400, "Bad HTTP request line: %s"%repr(line))
+            raise ProxyError(400, "Bad HTTP request line: %s" % repr(line))
         method, path, httpversion = r
         headers = self.read_headers(authenticate=False)
         content = http.read_http_body_request(
-                    self.rfile, self.wfile, headers, httpversion, self.config.body_size_limit
-                )
+            self.rfile, self.wfile, headers, httpversion, self.config.body_size_limit
+        )
         return flow.Request(
-                    client_conn, httpversion, host, port, "http", method, path, headers, content,
-                    self.rfile.first_byte_timestamp, utils.timestamp()
-               )
+            client_conn, httpversion, host, port, "http", method, path, headers, content,
+            self.rfile.first_byte_timestamp, utils.timestamp()
+        )
 
     def read_request(self, client_conn):
         self.rfile.reset_timestamps()
@@ -449,10 +436,10 @@ class ProxyHandler(tcp.BaseHandler):
                 self.config.authenticator.clean(headers)
             else:
                 raise ProxyError(
-                            407,
-                            "Proxy Authentication Required",
-                            self.config.authenticator.auth_challenge_headers()
-                       )
+                    407,
+                    "Proxy Authentication Required",
+                    self.config.authenticator.auth_challenge_headers()
+                )
         return headers
 
     def send_response(self, response):
@@ -465,14 +452,15 @@ class ProxyHandler(tcp.BaseHandler):
     def send_error(self, code, body, headers):
         try:
             response = http_status.RESPONSES.get(code, "Unknown")
-            html_content = '<html><head>\n<title>%d %s</title>\n</head>\n<body>\n%s\n</body>\n</html>'%(code, response, body)
+            html_content = '<html><head>\n<title>%d %s</title>\n</head>\n<body>\n%s\n</body>\n</html>' % (
+                code, response, body)
             self.wfile.write("HTTP/1.1 %s %s\r\n" % (code, response))
-            self.wfile.write("Server: %s\r\n"%self.server_version)
+            self.wfile.write("Server: %s\r\n" % self.server_version)
             self.wfile.write("Content-type: text/html\r\n")
-            self.wfile.write("Content-Length: %d\r\n"%len(html_content))
+            self.wfile.write("Content-Length: %d\r\n" % len(html_content))
             if headers:
                 for key, value in headers.items():
-                    self.wfile.write("%s: %s\r\n"%(key, value))
+                    self.wfile.write("%s: %s\r\n" % (key, value))
             self.wfile.write("Connection: close\r\n")
             self.wfile.write("\r\n")
             self.wfile.write(html_content)
@@ -487,6 +475,7 @@ class ProxyServerError(Exception): pass
 class ProxyServer(tcp.TCPServer):
     allow_reuse_address = True
     bound = True
+
     def __init__(self, config, port, address='', server_version=version.NAMEVERSION):
         """
             Raises ProxyServerError if there's a startup problem.
@@ -538,6 +527,7 @@ class AppRegistry:
 
 class DummyServer:
     bound = False
+
     def __init__(self, config):
         self.config = config
 
@@ -547,6 +537,7 @@ class DummyServer:
     def shutdown(self):
         pass
 
+
 TRANSPARENT_SSL_PORTS = [443, 8443]
 
 
@@ -554,14 +545,13 @@ def get_transparent():
     if not platform.resolver:
         raise ArgumentTypeError("Transparent mode not supported on this platform.")
     return dict(
-        resolver = platform.resolver(),
-        sslports = TRANSPARENT_SSL_PORTS
+        resolver=platform.resolver(),
+        sslports=TRANSPARENT_SSL_PORTS
     )
 
 
 # Command-line utils
 def add_arguments(parser):
-
     group = parser.add_argument_group("Proxy Options")
     mgroup = group.add_mutually_exclusive_group()
     mgroup.add_argument(
@@ -577,8 +567,8 @@ def add_arguments(parser):
     group.add_argument(
         "-Z",
         action="store", dest="body_size_limit", default=None,
-        type=utils.parse_size,  metavar="SIZE",
-        help="Byte size limit of HTTP request and response bodies."\
+        type=utils.parse_size, metavar="SIZE",
+        help="Byte size limit of HTTP request and response bodies." \
              " Understands k/m/g suffixes, i.e. 3m for 3 megabytes."
     )
     group.add_argument(
@@ -596,7 +586,7 @@ def add_arguments(parser):
     group.add_argument(
         "--ca-cert", dest="cacert", default=None,
         action="store", type=parse_file_argument(expanduser=True, required_file=True),
-        help="User-created SSL certificate file."
+        help="User-created SSL CA file."
     )
     group.add_argument(
         "--client-certs", dest="clientcerts", default=None,
@@ -632,30 +622,14 @@ def add_arguments(parser):
         help="Allow access to users specified in an Apache htpasswd file."
     )
 
-# FIXME: Remove
-"""
-def process_proxy_options(parser, options):
-    cacert = os.path.join(options.confdir, "mitmproxy-ca.pem")
-    if not os.path.exists(cacert):
-        certutils.dummy_ca(cacert)
-    return ProxyConfig(
-        certfile = options.cert,
-        cacert = cacert,
-        clientcerts = options.clientcerts,
-        body_size_limit = options.body_size_limit,
-        no_upstream_cert = options.no_upstream_cert,
-        reverse_proxy = options.reverse_proxy,
-        transparent_proxy = options.transparent_proxy,
-        authenticator = (options.authenticator if hasattr(options, "authenticator") else None)
-    )"""
-
 
 def get_server(options):
     # Before we create a server, make sure that a cacert exists.
-    cacert = os.path.join(options.confdir, "mitmproxy-ca.pem")
-    if not os.path.exists(cacert):
-        certutils.dummy_ca(cacert)
-    options.cacert = cacert
+    if not options.cacert:
+        cacert = os.path.join(options.confdir, "mitmproxy-ca.pem")
+        if not os.path.exists(cacert):
+            certutils.dummy_ca(cacert)
+        options.cacert = cacert
 
     if options.no_server:
         return DummyServer(options)
