@@ -153,6 +153,6 @@ console.ConsoleMaster.add_arguments(parser)
 def _options(*opts):
     return parser.parse_args(*opts)
 
-def test_options(self):
+def test_options():
     o = _options("-vv")
     assert o.verbosity == 3
