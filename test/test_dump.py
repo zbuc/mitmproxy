@@ -110,8 +110,8 @@ class TestDumpMaster:
             self._dummy_cycle(0, "", verbosity=1, rfile=tutils.test_data.path("test_dump.py"))
 
     def test_options(self):
-        o = _options(verbosity = 2)
-        assert o.verbosity == 2
+        o = parser.parse_args(["-vv"])
+        assert o.verbosity == 3
 
     def test_filter(self):
         assert not "GET" in self._dummy_cycle(1, "", filt=["~u","foo"], verbosity=1)

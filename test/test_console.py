@@ -1,4 +1,4 @@
-import os
+import os, argparse
 from nose.plugins.skip import SkipTest
 if os.name == "nt":
     raise SkipTest("Skipped on Windows.")
@@ -148,6 +148,11 @@ class TestPathCompleter:
         assert c.complete(s) == s
         assert c.final == s
 
+parser = argparse.ArgumentParser()
+console.ConsoleMaster.add_arguments(parser)
+def _options(*opts):
+    return parser.parse_args(*opts)
 
-def test_options():
-    assert console.Options(kill=True)
+def test_options(self):
+    o = _options("-vv")
+    assert o.verbosity == 3
