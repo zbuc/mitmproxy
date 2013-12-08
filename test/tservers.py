@@ -119,9 +119,10 @@ class ProxTestBase:
         )
 
     @classmethod
-    def get_proxy_config(cls):
+    def get_proxy_config(cls, *args):
         opts = ["--no-upstream-cert",
                 "--ca-cert", tutils.test_data.path("data/serverkey.pem")]
+        opts.extend(args)
         if cls.clientcerts:
             opts.extend(["--client-certs", tutils.test_data.path("data/clientcert")])
         if cls.certfile:
@@ -188,7 +189,7 @@ class TransparentProxTest(ProxTestBase):
             ports = [cls.server.port, cls.server2.port]
         else:
             ports = []
-        d["transparent_proxy"] = dict(
+        d.transparent_proxy = dict(
             resolver = cls.resolver(cls.server.port),
             sslports = ports
         )
@@ -219,13 +220,9 @@ class ReverseProxTest(ProxTestBase):
     ssl = None
     @classmethod
     def get_proxy_config(cls):
-        d = ProxTestBase.get_proxy_config()
-        d["reverse_proxy"] = (
-                "https" if cls.ssl else "http",
-                "127.0.0.1",
-                cls.server.port
-            )
-        return d
+        reverse_proxy_spec = (("https" if cls.ssl else "http") +
+                "://127.0.0.1:" + cls.server.port)
+        return ProxTestBase.get_proxy_config("-P",reverse_proxy_spec)
 
     def pathoc(self, sni=None):
         """
