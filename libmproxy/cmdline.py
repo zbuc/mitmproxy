@@ -175,6 +175,11 @@ def add_common_arguments(parser):
         help="Proxy service port."
     )
     parser.add_argument(
+        "-w",
+        action="store", dest="wfile", default=None,
+        help="Write flows to file."
+    )
+    parser.add_argument(
         "-r",
         action="store", dest="rfile", default=None,
         help="Read flows from file."
@@ -210,11 +215,6 @@ def add_common_arguments(parser):
         "-q",
         action='store_const', dest="verbosity", const=0,
         help="Quiet."
-    )
-    parser.add_argument(
-        "-w",
-        action="store", dest="wfile", default=None,
-        help="Write flows to file."
     )
     parser.add_argument(
         "-z",

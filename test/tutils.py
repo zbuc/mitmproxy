@@ -119,8 +119,7 @@ class MockParser(argparse.ArgumentParser):
         raise Exception(message)
 
 
+parser = MockParser()
+cmdline.add_common_arguments(parser)
 def toptions(*args):
-    parser = MockParser()
-    cmdline.add_common_arguments(parser)
-    x = parser.parse_args(args=args)
     return parser.parse_args(args=args)

@@ -1,6 +1,6 @@
-import argparse
 from libmproxy import proxy, flow, cmdline
 import tutils
+import socket
 from libpathod import test
 from netlib import http, tcp
 import mock
@@ -60,7 +60,7 @@ class TestServerConnection:
         sc.terminate()
 
 
-class TestProcessProxyOptions:
+class TestProxyOptions:
     def p(self, *args):
         parser = tutils.MockParser()
         cmdline.add_common_arguments(parser)
@@ -115,18 +115,26 @@ class TestProcessProxyOptions:
         self.assert_err("invalid single-user specification", "--singleuser", "test")
 
 
-class TestProxyServer:
-    @tutils.SkipWindows # binding to 0.0.0.0:1 works without special permissions on Windows
-    def test_err(self):
-        parser = argparse.ArgumentParser()
-        cmdline.add_common_arguments(parser)
-        opts = parser.parse_args(args=[])
-        tutils.raises("error starting proxy server", proxy.ProxyServer, opts, 1)
-
-
 class TestDummyServer:
     def test_simple(self):
         d = proxy.DummyServer(None)
         d.start_slave()
         d.shutdown()
 
+
+class TestProxyServer:
+    @tutils.SkipWindows # binding to 0.0.0.0:1 works without special permissions on Windows
+    def test_err(self):
+        tutils.raises("error starting proxy server", proxy.ProxyServer, tutils.toptions(), 1)
+
+    def test_err2(self):
+        tutils.raises("error starting proxy server", proxy.ProxyServer, tutils.toptions(), 80, "!")
+
+class TestProxyFactory:
+    def test_dummyserver(self):
+        p = proxy.get_server(tutils.toptions("-n"))
+        assert isinstance(p, proxy.DummyServer)
+
+    def test_proxyserver(self):
+        p = proxy.get_server(tutils.toptions())
+        assert isinstance(p, proxy.ProxyServer)

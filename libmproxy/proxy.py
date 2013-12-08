@@ -636,7 +636,7 @@ def get_server(options):
     if not options.cacert:
         cacert = os.path.join(options.confdir, "mitmproxy-ca.pem")
         if not os.path.exists(cacert):
-            certutils.dummy_ca(cacert)
+            certutils.dummy_ca(cacert) # pragma: nocover (tested in netlib)
         options.cacert = cacert
 
     if options.no_server:
@@ -644,6 +644,6 @@ def get_server(options):
     else:
         try:
             return ProxyServer(options, options.port, options.addr)
-        except ProxyServerError, v:
+        except ProxyServerError, v: # pragma: nocover
             print >> sys.stderr, "%s: %s" % (sys.argv[0], v.args[0])
             sys.exit(1)
