@@ -45,7 +45,7 @@ def test_shlex():
 
     parser = tutils.MockParser()
     cmdline.add_common_arguments(parser)
-    opts = parser.parse_args(args=["-s",absfilepath])
+    opts = parser.parse_args(args=["-s", absfilepath])
     
     assert os.path.isfile(opts.scripts[0][0])
 

@@ -95,7 +95,7 @@ def parse_setheader(s):
     return _parse_hook(s)
 
 
-def parse_file_argument(expanduser=False, required_dir=False, required_file=False):
+def parse_file_argument(expanduser=False, required_dir=False, required_file=False, makedirs=False):
     """
     Returns a function that processes a path string with the options.
     """
@@ -103,12 +103,14 @@ def parse_file_argument(expanduser=False, required_dir=False, required_file=Fals
         if expanduser:
             path = os.path.expanduser(path)
         if required_dir and not os.path.isdir(path):
-            raise ArgumentTypeError("Directory does not exist or is not a directory: %s" % path)
+            if makedirs and not os.path.exists(path):
+                os.makedirs(path)
+            else:
+                raise ArgumentTypeError("Directory does not exist or is not a directory: %s" % path)
         if required_file and not os.path.isfile(path):
             raise ArgumentTypeError("File does not exist os is not a file: %s" % path)
         return path
     return _parser
-
 
 def raiseIfNone(func):
     """
@@ -154,7 +156,7 @@ def add_common_arguments(parser):
     )
     parser.add_argument(
         "--confdir", dest="confdir", default=os.path.expanduser('~/.mitmproxy'),
-        action="store", type=parse_file_argument(expanduser=True, required_dir=True),
+        action="store", type=parse_file_argument(expanduser=True, required_dir=True, makedirs=True),
         help="Configuration directory. (~/.mitmproxy)"
     )
     parser.add_argument(
