@@ -2,10 +2,8 @@ import threading, Queue
 import flask
 import libpathod.test, libpathod.pathoc
 from libmproxy import proxy, flow, controller
+from libmproxy.cmdline import APP_HOST, APP_PORT
 import tutils
-
-APP_DOMAIN = "mitm"
-APP_IP = "1.1.1.1"
 
 testapp = flask.Flask(__name__)
 
@@ -31,7 +29,7 @@ class TestMaster(flow.FlowMaster):
         flow.FlowMaster.__init__(self, s, state)
         self.testq = testq
         self.clear_log()
-        self.start_app(APP_DOMAIN, APP_IP, False, False)
+        self.start_app(APP_HOST, APP_PORT, False, False, False)
 
     def handle_request(self, m):
         flow.FlowMaster.handle_request(self, m)
@@ -163,12 +161,12 @@ class HTTPProxTest(ProxTestBase):
         if self.ssl:
             p = libpathod.pathoc.Pathoc("127.0.0.1", self.proxy.port, True)
             print "PRE"
-            p.connect((APP_IP, 80))
+            p.connect((APP_HOST, APP_PORT))
             print "POST"
             return p.request("get:'/%s'"%page)
         else:
             p = self.pathoc()
-            return p.request("get:'http://%s/%s'"%(APP_DOMAIN, page))
+            return p.request("get:'http://%s:%d/%s'"%(APP_HOST, APP_PORT, page))
 
 
 class TResolver:

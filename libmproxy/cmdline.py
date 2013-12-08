@@ -2,8 +2,8 @@ import re, shlex, os
 from argparse import Action, ArgumentTypeError
 import version, filt
 
-APP_DOMAIN = "mitm"
-APP_IP = "1.1.1.1"
+APP_HOST = "mitm"
+APP_PORT = 80
 
 
 def _parse_hook(s):
@@ -232,15 +232,19 @@ def add_common_arguments(parser):
         help="Enable the mitmproxy web app."
     )
     group.add_argument(
-        "--appdomain",
-        action="store", dest="app_domain", default=APP_DOMAIN, metavar="domain",
-        help="Domain to serve the app from."
+        "--app-host",
+        action="store", dest="app_host", default=APP_HOST, metavar="host",
+        help="Domain to serve the app from. For transparent mode, use an IP when a DNS entry for the app domain is not present."
     )
     group.add_argument(
-        "--appip",
-        action="store", dest="app_ip", default=APP_IP, metavar="ip",
-        help="""IP to serve the app from. Useful for transparent mode, when a DNS
-        entry for the app domain is not present."""
+        "--app-port",
+        action="store", dest="app_port", default=APP_PORT, type=int, metavar="80",
+        help="Port to serve the app from."
+    )
+    group.add_argument(
+        "--app-external",
+        action="store_true", dest="app_external",
+        help="Serve the app outside of the proxy."
     )
     parser.add_argument(
         "--app-readonly",

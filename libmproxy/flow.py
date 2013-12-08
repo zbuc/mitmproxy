@@ -2,7 +2,7 @@
     This module provides more sophisticated flow tracking. These match requests
     with their responses, and provide filtering and interception facilities.
 """
-import hashlib, Cookie, cookielib, copy, re, urlparse, os
+import hashlib, Cookie, cookielib, copy, re, urlparse, os, threading
 import time, urllib
 import tnetstring, filt, script, utils, encoding, proxy
 from email.utils import parsedate_tz, formatdate, mktime_tz
@@ -1367,19 +1367,21 @@ class FlowMaster(controller.Master):
         self.stream = None
         app.mapp.config["PMASTER"] = self
 
-    def start_app(self, domain, ip, auth, readonly):
+    def start_app(self, host, port, external, auth, readonly):
         app.mapp.config["auth_token"] = auth
         app.mapp.config["readonly"] = readonly
-        self.server.apps.add(
-            app.mapp,
-            domain,
-            80
-        )
-        self.server.apps.add(
-            app.mapp,
-            ip,
-            80
-        )
+        if not external:
+            self.server.apps.add(
+                app.mapp,
+                host,
+                port
+            )
+        else:
+            print host
+            threading.Thread(target=app.mapp.run,kwargs={
+                "use_reloader": False,
+                "host": host,
+                "port": port}).start()
 
     def add_event(self, e, level="info"):
         """
@@ -1580,6 +1582,13 @@ class FlowMaster(controller.Master):
     def handle_clientdisconnect(self, r):
         self.run_script_hook("clientdisconnect", r)
         r.reply()
+
+    def handle_serverconnection(self, sc):
+        # To unify the mitmproxy script API, we call the script hook "serverconnect" rather than "serverconnection".
+        # As things are handled differently in libmproxy (ClientConnect + ClientDisconnect vs ServerConnection class),
+        # there is no "serverdisonnect" event at the moment.
+        self.run_script_hook("serverconnect", sc)
+        sc.reply()
 
     def handle_error(self, r):
         f = self.state.add_error(r)
