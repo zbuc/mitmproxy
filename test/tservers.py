@@ -221,8 +221,8 @@ class ReverseProxTest(ProxTestBase):
     @classmethod
     def get_proxy_config(cls):
         reverse_proxy_spec = (("https" if cls.ssl else "http") +
-                "://127.0.0.1:" + cls.server.port)
-        return ProxTestBase.get_proxy_config("-P",reverse_proxy_spec)
+                              "://127.0.0.1:" + str(cls.server.port))
+        return ProxTestBase.get_proxy_config("-P", reverse_proxy_spec)
 
     def pathoc(self, sni=None):
         """
