@@ -2,7 +2,9 @@ import sys, os, argparse
 import netlib.utils
 import flow, filt, utils, cmdline
 
+
 class DumpError(Exception): pass
+
 
 def str_response(resp):
     r = "%s %s"%(resp.code, resp.msg)
