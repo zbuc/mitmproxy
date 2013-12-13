@@ -2,7 +2,7 @@
 # PyInstaller Spec File
 
 from PyInstaller.build import *
-import os, sys, shutil
+import os, sys, shutil, zipfile
 from os.path import join
 
 EXT = ".exe" if (os.name == "nt") else ""
@@ -45,12 +45,20 @@ for i, a in enumerate(analyses):
 
 print "Pack release..."
 os.renames("./dist", dst_dir)
-os.mkdir(join(dst_dir, "libmproxy"))
-print "."
-shutil.copytree(join(src_dir,"libmproxy/gui"), join(dst_dir, "libmproxy/gui"))
-print "."
+print "Building gui.zip..."
+
+
+def zipdir(path, zip):
+    for root, dirs, files in os.walk(path):
+        for file in files:
+            zip.write(os.path.join(root, file))
+
+with zipfile.ZipFile(join(dst_dir, 'gui.zip'), 'w', zipfile.ZIP_DEFLATED) as z:
+    zipdir(join(src_dir, "libmproxy/gui"), z)
+
+print "Copy scripts..."
 shutil.copytree(join(src_dir, "scripts"), join(dst_dir, "scripts"))
-print "."
+print "Copy meta files..."
 for fname in os.listdir(src_dir):
     f = join(src_dir, fname)
     if os.path.isfile(f) and fname not in ['mitmdump', 'mitmproxy', 'mitmproxy-gui']:

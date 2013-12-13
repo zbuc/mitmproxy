@@ -6,7 +6,9 @@ import flask
 import filt
 import httplib
 import sys
-from flask import request, send_from_directory, Response, session, redirect, url_for
+import zipfile
+import mimetypes
+from flask import request, send_from_directory, send_file, Response, session, redirect, url_for
 from flask.json import jsonify, dumps
 from flask.helpers import safe_join
 from werkzeug.exceptions import *
@@ -23,11 +25,16 @@ class FFlask(flask.Flask):
     def __init__(self, *args, **kwargs):
         flask.Flask.__init__(self, *args, **kwargs)
         if getattr(sys, 'frozen', False):
-            self.root_path = os.path.abspath(os.path.join(os.path.dirname(sys.executable), "libmproxy"))
+            self.root_path = os.path.abspath(os.path.dirname(sys.executable))
+        else:
+            self.root_path = os.path.join(self.root_path, "..")
+
+        gui_zip = os.path.join(self.root_path, "gui.zip")
+        if os.path.isfile(gui_zip):
+            self.config["static_zip"] = zipfile.ZipFile(gui_zip, "r")
 
 mapp = FFlask(__name__)
 
-mapp.debug = True
 mapp.secret_key = os.urandom(32)
 
 def auth_token():
@@ -101,7 +108,15 @@ def app():
 
 @mapp.route('/app/<path:filename>')
 def app_static(filename):
-    return send_from_directory(os.path.join(mapp.root_path, 'gui'), filename)
+    if "static_zip" in mapp.config:
+        try:
+            file = mapp.config["static_zip"].open(filename, 'r')
+            mimetype = mimetypes.guess_type(filename)[0]
+        except KeyError:
+            raise NotFound()
+        return mapp.response_class(file, mimetype=mimetype, direct_passthrough=True)
+    else:
+        return send_from_directory(os.path.join(mapp.root_path, 'gui'), filename)
 
 
 @mapp.route("/api/config")
@@ -268,7 +283,7 @@ def content(flowid, message):
 
 @mapp.route("/api/fs/<path:path>", methods=['GET', 'POST', 'PUT', 'DELETE'])
 def fsapi(path):
-    path = safe_join(mapp.root_path + '/../scripts/gui', path)
+    path = safe_join(mapp.root_path + '/scripts/gui', path)
     func = getattr(FilesystemApi, str(request.method))
     return func(
         path=path,

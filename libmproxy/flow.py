@@ -4,6 +4,9 @@
 """
 import hashlib, Cookie, cookielib, copy, re, urlparse, os, threading
 import time, urllib
+from tornado.httpserver import HTTPServer
+from tornado.ioloop import IOLoop
+from tornado.wsgi import WSGIContainer
 import tnetstring, filt, script, utils, encoding, proxy
 from email.utils import parsedate_tz, formatdate, mktime_tz
 from netlib import odict, http, certutils
@@ -12,6 +15,8 @@ import app
 
 HDR_FORM_URLENCODED = "application/x-www-form-urlencoded"
 CONTENT_MISSING = 0
+
+USE_TORNADO = True
 
 ODict = odict.ODict
 ODictCaseless = odict.ODictCaseless
@@ -1385,7 +1390,15 @@ class FlowMaster(controller.Master):
                 port
             )
         else:
-            threading.Thread(target=app.mapp.run, kwargs={
+            if USE_TORNADO:
+                http_server = HTTPServer(WSGIContainer(app.mapp))
+                http_server.listen(port, address=host)
+                threading.Thread(target=IOLoop.instance().start).start()
+            else:
+                # The Flask server is really sloooow, we usually want to avoid that.
+                # However, the debugging interface is superior to Tornado.
+                app.mapp.debug = True
+                threading.Thread(target=app.mapp.run, kwargs={
                 "use_reloader": False,
                 "host": host,
                 "port": port}).start()
