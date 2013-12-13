@@ -1399,9 +1399,9 @@ class FlowMaster(controller.Master):
                 # However, the debugging interface is superior to Tornado.
                 app.mapp.debug = True
                 threading.Thread(target=app.mapp.run, kwargs={
-                "use_reloader": False,
-                "host": host,
-                "port": port}).start()
+                    "use_reloader": False,
+                    "host": host,
+                    "port": port}).start()
 
     def add_event(self, e, level="info"):
         """

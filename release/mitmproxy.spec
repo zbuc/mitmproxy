@@ -49,9 +49,12 @@ print "Building gui.zip..."
 
 
 def zipdir(path, zip):
-    for root, dirs, files in os.walk(path):
+    cwd = os.getcwd()
+    os.chdir(path)
+    for root, dirs, files in os.walk("."):
         for file in files:
             zip.write(os.path.join(root, file))
+    os.chdir(cwd)
 
 with zipfile.ZipFile(join(dst_dir, 'gui.zip'), 'w', zipfile.ZIP_DEFLATED) as z:
     zipdir(join(src_dir, "libmproxy/gui"), z)

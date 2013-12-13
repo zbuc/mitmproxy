@@ -116,7 +116,7 @@ def app_static(filename):
             raise NotFound()
         return mapp.response_class(file, mimetype=mimetype, direct_passthrough=True)
     else:
-        return send_from_directory(os.path.join(mapp.root_path, 'gui'), filename)
+        return send_from_directory(os.path.join(mapp.root_path, 'libmproxy/gui'), filename)
 
 
 @mapp.route("/api/config")
