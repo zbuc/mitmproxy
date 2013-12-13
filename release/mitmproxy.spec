@@ -21,20 +21,25 @@ analyses = []
 for s in scripts:
     a = Analysis(scripts=[join(src_dir, s)])
     analyses.append(a)
+    # http://www.pyinstaller.org/ticket/783
+    for d in a.datas:
+        if 'pyconfig' in d[0]: 
+            a.datas.remove(d)
+            break
 
-# If we use MERGE, our binaries break
-# Alternatively, we could exclude binaries and save them in the folder,
-# but that looks ugly and makes them less portable. 6MB is reasonable.
-#merge_info = []
-#for i, a in enumerate(analyses):
-#    merge_info.append((a, scripts[i], scripts[i] + EXT))
-#MERGE(*merge_info)
+merge_info = []
+for i, a in enumerate(analyses):
+    merge_info.append((a, scripts[i], scripts[i] + EXT))
+MERGE(*merge_info)
 
 for i, a in enumerate(analyses):
     pyz = PYZ(a.pure)
     EXE(pyz,
         a.scripts,
         a.binaries,
+        a.datas,
+        a.zipfiles,
+        a.dependencies,
         name=scripts[i] + EXT,
         console=True)
 
