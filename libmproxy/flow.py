@@ -1385,8 +1385,7 @@ class FlowMaster(controller.Master):
                 port
             )
         else:
-            print host
-            threading.Thread(target=app.mapp.run,kwargs={
+            threading.Thread(target=app.mapp.run, kwargs={
                 "use_reloader": False,
                 "host": host,
                 "port": port}).start()

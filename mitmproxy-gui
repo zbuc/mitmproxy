@@ -1,25 +1,29 @@
 #!/usr/bin/env python
-import sys, argparse, signal, webbrowser
-from libmproxy import proxy, dump, app
+import argparse, signal, webbrowser, threading, time
+from libmproxy import proxy, dump, app, cmdline
 
 if __name__ == '__main__':
+    cmdline.APP_HOST = "localhost" # Override default host setting
     parser = argparse.ArgumentParser(usage = "%(prog)s [options] [filter]")
     dump.DumpMaster.add_arguments(parser)
 
     options = parser.parse_args()
     options.app = True
+    options.app_external = True
 
     server = proxy.get_server(options)
-
     m = dump.DumpMaster(server, options)
 
-    # FIXME: If https://github.com/mitmproxy/mitmproxy/pull/161 gets merged..
-    # - Replace default port
-    # - force external app
-    url = "http://%s:%d/app" % (options.app_domain, 80)
+    url = "http://%s:%d/" % (options.app_host, options.app_port)
     if options.app_auth is not False:
         url += "?auth=%s" % app.auth_token()
-    webbrowser.open(url)
+
+    def open_browser():
+        # Workaround to make sure that the external server is already running.
+        time.sleep(0.5)
+        webbrowser.open(url)
+    threading.Thread(target=open_browser).start()
+
 
     def cleankill(*args, **kwargs):
         m.shutdown()
