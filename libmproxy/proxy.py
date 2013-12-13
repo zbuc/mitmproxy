@@ -199,6 +199,8 @@ class ProxyHandler(tcp.BaseHandler):
                     request = request_reply
                     if self.config.reverse_proxy:
                         scheme, host, port = self.config.reverse_proxy
+                    elif self.config.forward_proxy:
+                        scheme, host, port = self.config.forward_proxy
                     else:
                         scheme, host, port = request.scheme, request.host, request.port
 
@@ -207,12 +209,7 @@ class ProxyHandler(tcp.BaseHandler):
                     # the case, we want to reconnect without sending an error
                     # to the client.
                     while 1:
-                        if self.config.forward_proxy:
-                            forward_scheme, forward_host, forward_port = self.config.forward_proxy
-                            sc = self.get_server_connection(cc, forward_scheme, forward_host, forward_port, self.sni)
-                        else:
-                            sc = self.get_server_connection(cc, scheme, host, port, self.sni)
-                            
+                        sc = self.get_server_connection(cc, scheme, host, port, self.sni)
                         sc.send(request)
                         if sc.requestcount == 1: # add timestamps only for first request (others are not directly affected)
                             request.tcp_setup_timestamp = sc.tcp_setup_timestamp
@@ -220,6 +217,9 @@ class ProxyHandler(tcp.BaseHandler):
                         sc.rfile.reset_timestamps()
                         try:
                             tsstart = utils.timestamp()
+                            peername = sc.connection.getpeername()
+                            if peername:
+                                request.ip = peername[0]
                             httpversion, code, msg, headers, content = http.read_response(
                                 sc.rfile,
                                 request.method,
@@ -298,8 +298,10 @@ class ProxyHandler(tcp.BaseHandler):
             if not self.config.no_upstream_cert:
                 conn = self.get_server_connection(cc, "https", host, port, sni)
                 sans = conn.cert.altnames
-                host = conn.cert.cn.decode("utf8").encode("idna")
+                if conn.cert.cn:
+                    host = conn.cert.cn.decode("utf8").encode("idna")
             ret = self.server.certstore.get_cert(host, sans, self.config.cacert)
+
             if not ret:
                 raise ProxyError(502, "Unable to generate dummy cert.")
             return ret
@@ -333,10 +335,21 @@ class ProxyHandler(tcp.BaseHandler):
         host, port = orig
         if port in self.config.transparent_proxy["sslports"]:
             scheme = "https"
-            if not self.ssl_established:
-                self.establish_ssl(client_conn, host, port)
         else:
             scheme = "http"
+
+        return self._read_request_transparent(client_conn, scheme, host, port)
+
+    def _read_request_transparent(self, client_conn, scheme, host, port):
+        """
+        Read a transparent HTTP request. Transparent means that the client isn't aware of proxying.
+        In other words, the client request starts with
+        "GET /foo.html HTTP/1.1"
+        rather than
+        "CONNECT example.com:80 HTTP/1.1"
+        """
+        if scheme.lower() == "https" and not self.ssl_established:
+            self.establish_ssl(client_conn, host, port)
         line = self.get_line(self.rfile)
         if line == "":
             return None
@@ -404,22 +417,7 @@ class ProxyHandler(tcp.BaseHandler):
 
     def read_request_reverse(self, client_conn):
         scheme, host, port = self.config.reverse_proxy
-        if scheme.lower() == "https" and not self.ssl_established:
-            self.establish_ssl(client_conn, host, port)
-        line = self.get_line(self.rfile)
-        if line == "":
-            return None
-        r = http.parse_init_http(line)
-        if not r:
-            raise ProxyError(400, "Bad HTTP request line: %s" % repr(line))
-        method, path, httpversion = r
-        headers = self.read_headers(authenticate=False)
-        content = http.read_http_body_request(
-            self.rfile, self.wfile, headers, httpversion, self.config.body_size_limit
-        )
-        return flow.Request(
-            client_conn, httpversion, host, port, scheme, method, path, headers, content,
-            self.rfile.first_byte_timestamp, utils.timestamp())
+        return self._read_request_transparent(client_conn, scheme, host, port)
 
     def read_request(self, client_conn):
         self.rfile.reset_timestamps()

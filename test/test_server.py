@@ -142,6 +142,18 @@ class TestHTTP(tservers.HTTPProxTest, CommonMixin, AppMixin):
         req = p.request("get:'http://foo':h':foo'='bar'")
         assert req.status_code == 400
 
+    def test_empty_chunked_content(self):
+        """
+        https://github.com/mitmproxy/mitmproxy/issues/186
+        """
+        connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        connection.connect(("127.0.0.1", self.proxy.port))
+        spec = '301:h"Transfer-Encoding"="chunked":r:b"0\\r\\n\\r\\n"'
+        connection.send("GET http://localhost:%d/p/%s HTTP/1.1\r\n"%(self.server.port, spec))
+        connection.send("\r\n");
+        resp = connection.recv(50000)
+        connection.close()
+        assert "content-length" in resp.lower()
 
 class TestHTTPAuth(tservers.HTTPProxTest):
     authenticator = ["--singleuser", "test:test"]
@@ -195,6 +207,13 @@ class TestHTTPSCertfile(tservers.HTTPProxTest, CommonMixin):
     def test_certfile(self):
         assert self.pathod("304")
 
+class TestHTTPSNoCommonName(tservers.HTTPProxTest, CommonMixin):
+    """
+    Test what happens if we get a cert without common name back.
+    """
+    ssl = True
+    ssloptions=pathod.SSLOptions(certfile=tutils.test_data.path("data/no_common_name.pem"),
+                                 keyfile=tutils.test_data.path("data/no_common_name.pem"))
 
 class TestReverse(tservers.ReverseProxTest, CommonMixin):
     reverse = True
@@ -287,6 +306,11 @@ class TestProxy(tservers.HTTPProxTest):
         assert second_request.tcp_setup_timestamp == None
         assert second_request.ssl_setup_timestamp == None
 
+    def test_request_ip(self):
+        f = self.pathod("200:b@100")
+        assert f.status_code == 200
+        request = self.master.state.view[0].request
+        assert request.ip == "127.0.0.1"
 
 class TestProxySSL(tservers.HTTPProxTest):
     ssl=True

@@ -9,7 +9,7 @@ if __name__ == '__main__':
     options = parser.parse_args()
     options.app = True
 
-    server = proxy.get_server(parser,options)
+    server = proxy.get_server(options)
 
     m = dump.DumpMaster(server, options)
 
