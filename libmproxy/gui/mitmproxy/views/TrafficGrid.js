@@ -60,9 +60,8 @@ define(["dojo/_base/declare",
 				sortable: false
 			},
 			"request-path": {
-				label: "Request Path",
+				label: "Path",
 				renderCell: function(flow, value, node) {
-					//node.textContent = RequestUtils.getFilename(flow.request);
 					var filenameNode = document.createElement("span");
 					filenameNode.textContent = RequestUtils.getFilename(flow.request);
 					node.appendChild(filenameNode);
@@ -75,6 +74,13 @@ define(["dojo/_base/declare",
 					node.appendChild(fullPathNode);
 				}
 			},
+            source: {
+                label: "Source",
+                hidden: true,
+                get: function(flow) {
+					return flow.request.client_conn.address.join(":");
+				}
+            },
 			method: {
 				label: "Method",
 				get: function(flow) {
