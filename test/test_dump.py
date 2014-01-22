@@ -122,8 +122,8 @@ class TestDumpMaster:
     def test_app(self):
         o = _options(app=True)
         s = mock.MagicMock()
-        m = dump.DumpMaster(s, o)
-        assert s.apps.add.call_count == 1
+        m = dump.DumpMaster(s, o, None)
+        assert len(m.apps.apps) == 1
 
     def test_replacements(self):
         o = _options(replacements=[(".*", "content", "foo")])
@@ -161,7 +161,7 @@ class TestDumpMaster:
     def test_script(self):
         ret = self._dummy_cycle(
             1, "",
-            scripts=[[tutils.test_data.path("scripts/all.py")]], verbosity=0, eventlog=True
+            scripts=[tutils.test_data.path("scripts/all.py")], verbosity=0, eventlog=True
         )
         assert "XCLIENTCONNECT" in ret
         assert "XSERVERCONNECT" in ret
@@ -170,11 +170,11 @@ class TestDumpMaster:
         assert "XCLIENTDISCONNECT" in ret
         tutils.raises(
             dump.DumpError,
-            self._dummy_cycle, 1, "", scripts=[["nonexistent"]]
+            self._dummy_cycle, 1, "", scripts=["nonexistent"]
         )
         tutils.raises(
             dump.DumpError,
-            self._dummy_cycle, 1, "", scripts=[[tutils.test_data.path("scripts/starterr.py")]]
+            self._dummy_cycle, 1, "", scripts=["starterr.py"]
         )
 
     def test_stickycookie(self):

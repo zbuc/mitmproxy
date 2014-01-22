@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 import argparse, signal
-from libmproxy import proxy, dump
+from libmproxy import proxy, dump, utils
 
 if __name__ == '__main__':
+    utils.check_netlib_version_equality()
     parser = argparse.ArgumentParser(usage = "%(prog)s [options] [filter]")
     dump.DumpMaster.add_arguments(parser)
 

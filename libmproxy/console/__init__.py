@@ -1,7 +1,7 @@
 import mailcap, mimetypes, tempfile, os, subprocess, glob, time, shlex, stat
 import os.path, sys, weakref
 import urwid
-from .. import controller, utils, flow, cmdline
+from .. import controller, utils, flow, script, cmdline
 import flowlist, flowview, help, common, grideditor, palettes, contentview, flowdetailview
 
 EVENTLOG_SIZE = 500
@@ -174,8 +174,7 @@ class StatusBar(common.WWrap):
             r.append("[%s]"%(":".join(opts)))
 
         if self.master.scripts:
-            r.append("[script:%s]"%self.master.script.path)
-
+            r.append("[scripts:%s]"%len(self.master.scripts))
         if self.master.debug:
             r.append("[lt:%0.3f]"%self.master.looptime)
 
@@ -395,11 +394,12 @@ class ConsoleMaster(flow.FlowMaster):
 
         self.debug = options.debug
 
-        if options.script:
-            err = self.load_script(options.script)
-            if err:
-                print >> sys.stderr, "Script load error:", err
-                sys.exit(1)
+        if options.scripts:
+            for i in options.scripts:
+                err = self.load_script(i)
+                if err:
+                    print >> sys.stderr, "Script load error:", err
+                    sys.exit(1)
 
         if options.wfile:
             err = self.start_stream(options.wfile)
@@ -419,7 +419,6 @@ class ConsoleMaster(flow.FlowMaster):
             return str(v)
         self.stream_path = path
 
-
     def _run_script_method(self, method, s, f):
         status, val = s.run(method, f)
         if val:
@@ -428,16 +427,18 @@ class ConsoleMaster(flow.FlowMaster):
             else:
                 self.add_event("Method %s error: %s"%(method, val[1]))
 
-    def run_script_once(self, path, f):
-        if not path:
+    def run_script_once(self, command, f):
+        if not command:
             return
-        self.add_event("Running script on flow: %s"%path)
-        ret = self.get_script(path)
-        if ret[0]:
+        self.add_event("Running script on flow: %s"%command)
+
+        try:
+            s = script.Script(command, self)
+        except script.ScriptError, v:
             self.statusbar.message("Error loading script.")
-            self.add_event("Error loading script:\n%s"%ret[0])
+            self.add_event("Error loading script:\n%s"%v.args[0])
             return
-        s = ret[1]
+
         if f.request:
             self._run_script_method("request", s, f)
         if f.response:
@@ -446,15 +447,15 @@ class ConsoleMaster(flow.FlowMaster):
             self._run_script_method("error", s, f)
         s.unload()
         self.refresh_flow(f)
-        self.state.last_script = path
+        self.state.last_script = command
 
-    def set_script(self, path):
-        if not path:
+    def set_script(self, command):
+        if not command:
             return
-        ret = self.load_script(path)
+        ret = self.load_script(command)
         if ret:
             self.statusbar.message(ret)
-        self.state.last_script = path
+        self.state.last_script = command
 
     def toggle_eventlog(self):
         self.eventlog = not self.eventlog
@@ -767,6 +768,9 @@ class ConsoleMaster(flow.FlowMaster):
         else:
             self.view_flowlist()
 
+    def edit_scripts(self, *args, **kwargs):
+        pass
+
     def loop(self):
         changed = True
         try:
@@ -865,14 +869,21 @@ class ConsoleMaster(flow.FlowMaster):
                                     )
                                 )
                             elif k == "s":
-                                if self.scripts:
-                                    self.load_script(None)
-                                else:
-                                    self.path_prompt(
-                                        "Set script: ",
-                                        self.state.last_script,
-                                        self.set_script
+                                self.view_grideditor(
+                                    grideditor.ScriptEditor(
+                                        self,
+                                        [[i.argv[0]] for i in self.scripts],
+                                        self.edit_scripts
                                     )
+                                )
+                                #if self.scripts:
+                                #    self.load_script(None)
+                                #else:
+                                #    self.path_prompt(
+                                #        "Set script: ",
+                                #        self.state.last_script,
+                                #        self.set_script
+                                #    )
                             elif k == "S":
                                 if not self.server_playback:
                                     self.path_prompt(

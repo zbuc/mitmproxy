@@ -186,7 +186,7 @@ def add_common_arguments(parser):
     )
     parser.add_argument(
         "-s",
-        action="append", type=lambda x: shlex.split(x, posix=(os.name != "nt")), dest="scripts", default=[],
+        action="append", type=str, dest="scripts", default=[],
         metavar='"script.py --bar"',
         help="Run a script. Surround with quotes to pass script arguments. Can be passed multiple times."
     )
@@ -236,7 +236,9 @@ def add_common_arguments(parser):
     group.add_argument(
         "--app-host",
         action="store", dest="app_host", default=APP_HOST, metavar="host",
-        help="Domain to serve the app from. For transparent mode, use an IP when a DNS entry for the app domain is not present."
+        help="Domain to serve the app from. For transparent mode, use an IP when\
+                a DNS entry for the app domain is not present. Default: %s"%APP_HOST
+
     )
     group.add_argument(
         "--app-port",

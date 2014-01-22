@@ -128,3 +128,5 @@ def test_safe_subn():
 def test_urlencode():
     assert utils.urlencode([('foo','bar')])
 
+def test_check_netlib_version_equality():
+    assert utils.check_netlib_version_equality()

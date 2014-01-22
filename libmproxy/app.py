@@ -82,23 +82,26 @@ def require_write_permission(f):
     return wrap
 
 
+def master():
+    return flask.request.environ.get("mitmproxy.master", False) or mapp.config["mitmproxy.master"]
+
 @mapp.route("/")
 def index():
     return redirect(url_for("app"))
 
 
-@mapp.route("/api/certs")
+@mapp.route("/api/cert")
 def certs_index():
-    return certs("cer")
+    return certs("pem")
 
 
-@mapp.route("/api/certs.<ext>")
+@mapp.route("/api/cert.<ext>")
 def certs(ext):
-    if not ext:
-        ext = "cer"
-    if ext not in ["cer","pem"]:
-        raise BadRequest()
-    return "cert."+ext, 200
+    if ext == "pem":
+        p = master().server.config.cacert
+        with open(p, "rb") as f:
+            return flask.Response(f.read(), mimetype='application/x-x509-ca-cert')
+    raise BadRequest()
 
 
 @mapp.route('/app/')
@@ -121,22 +124,20 @@ def app_static(filename):
 
 @mapp.route("/api/config")
 def config():
-    m = mapp.config["PMASTER"]
     return jsonify(
         version=VERSION,
-        proxy=m.server.server_address,
+        proxy=master().server.server_address,
         token=xsrf_token,
         auth=auth_token(),
         readonly=mapp.config["readonly"]
     )
 
 def _flow(flowid=None):
-    m = mapp.config["PMASTER"]
     try:
         if flowid:
-            return m.state._flow_list[int(flowid)]  # FIXME: Change when id attr introduced
+            return master().state._flow_list[int(flowid)]  # FIXME: Change when id attr introduced
         else:
-            return m.state._flow_list
+            return master().state._flow_list
     except:
         raise BadRequest()
 

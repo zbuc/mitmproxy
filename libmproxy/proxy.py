@@ -6,6 +6,8 @@ import utils, flow, version, platform, controller
 from cmdline import parse_file_argument, lazy_const, raiseIfNone
 
 
+TRANSPARENT_SSL_PORTS = [443, 8443]
+
 KILL = 0
 
 
@@ -75,7 +77,6 @@ class RequestReplayThread(threading.Thread):
             server = ServerConnection(self.config, r.scheme, r.host, r.port, r.host)
             server.connect()
             server.send(r)
-            tsstart = utils.timestamp()
             httpversion, code, msg, headers, content = http.read_response(
                 server.rfile, r.method, self.config.body_size_limit
             )
@@ -83,30 +84,31 @@ class RequestReplayThread(threading.Thread):
                 self.flow.request, httpversion, code, msg, headers, content, server.cert,
                 server.rfile.first_byte_timestamp
             )
-            self.channel.ask(response)
+            self.channel.ask("response", response)
         except (ProxyError, http.HttpError, tcp.NetLibError), v:
             err = flow.Error(self.flow.request, str(v))
-            self.channel.ask(err)
+            self.channel.ask("error", err)
 
 
 class HandleSNI:
-    def __init__(self, handler, client_conn, host, port, cert, key):
+    def __init__(self, handler, client_conn, host, port, key):
         self.handler, self.client_conn, self.host, self.port = handler, client_conn, host, port
-        self.cert, self.key = cert, key
+        self.key = key
 
-    def __call__(self, connection):
+    def __call__(self, client_connection):
         try:
-            sn = connection.get_servername()
+            sn = client_connection.get_servername()
             if sn:
                 self.handler.get_server_connection(self.client_conn, "https", self.host, self.port, sn)
+                dummycert = self.handler.find_cert(self.client_conn, self.host, self.port, sn)
                 new_context = SSL.Context(SSL.TLSv1_METHOD)
                 new_context.use_privatekey_file(self.key)
-                new_context.use_certificate(self.cert.x509)
-                connection.set_context(new_context)
+                new_context.use_certificate(dummycert.x509)
+                client_connection.set_context(new_context)
                 self.handler.sni = sn.decode("utf8").encode("idna")
         # An unhandled exception in this method will core dump PyOpenSSL, so
         # make dang sure it doesn't happen.
-        except Exception, e: # pragma: no cover
+        except Exception: # pragma: no cover
             pass
 
 
@@ -159,7 +161,7 @@ class ProxyHandler(tcp.BaseHandler):
                 self.server_conn.require_request = False
 
                 self.server_conn.conn_info = conn_info
-                self.channel.ask(self.server_conn)
+                self.channel.ask("serverconnect", self.server_conn)
                 self.server_conn.connect()
             except tcp.NetLibError, v:
                 raise ProxyError(502, v)
@@ -173,7 +175,7 @@ class ProxyHandler(tcp.BaseHandler):
     def handle(self):
         cc = flow.ClientConnect(self.client_address)
         self.log(cc, "connect")
-        self.channel.ask(cc)
+        self.channel.ask("clientconnect", cc)
         while self.handle_request(cc) and not cc.close:
             pass
         cc.close = True
@@ -185,7 +187,7 @@ class ProxyHandler(tcp.BaseHandler):
             [
                 "handled %s requests" % cc.requestcount]
         )
-        self.channel.tell(cd)
+        self.channel.tell("clientdisconnect", cd)
 
     def handle_request(self, cc):
         try:
@@ -195,84 +197,76 @@ class ProxyHandler(tcp.BaseHandler):
                 return
             cc.requestcount += 1
 
-            app = self.server.apps.get(request)
-            if app:
-                err = app.serve(request, self.wfile)
-                if err:
-                    self.log(cc, "Error in wsgi app.", err.split("\n"))
-                    return
+            request_reply = self.channel.ask("request", request)
+            if request_reply is None or request_reply == KILL:
+                return
+            elif isinstance(request_reply, flow.Response):
+                request = False
+                response = request_reply
+                response_reply = self.channel.ask("response", response)
             else:
-                request_reply = self.channel.ask(request)
-                if request_reply is None or request_reply == KILL:
-                    return
-                elif isinstance(request_reply, flow.Response):
-                    request = False
-                    response = request_reply
-                    response_reply = self.channel.ask(response)
+                request = request_reply
+                if self.config.reverse_proxy:
+                    scheme, host, port = self.config.reverse_proxy
+                elif self.config.forward_proxy:
+                    scheme, host, port = self.config.forward_proxy
                 else:
-                    request = request_reply
-                    if self.config.reverse_proxy:
-                        scheme, host, port = self.config.reverse_proxy
-                    elif self.config.forward_proxy:
-                        scheme, host, port = self.config.forward_proxy
-                    else:
-                        scheme, host, port = request.scheme, request.host, request.port
+                    scheme, host, port = request.scheme, request.host, request.port
 
-                    # If we've already pumped a request over this connection,
-                    # it's possible that the server has timed out. If this is
-                    # the case, we want to reconnect without sending an error
-                    # to the client.
-                    while 1:
-                        sc = self.get_server_connection(cc, scheme, host, port, self.sni, request=request)
-                        sc.send(request)
-                        if sc.requestcount == 1: # add timestamps only for first request (others are not directly affected)
-                            request.tcp_setup_timestamp = sc.tcp_setup_timestamp
-                            request.ssl_setup_timestamp = sc.ssl_setup_timestamp
-                        sc.rfile.reset_timestamps()
-                        try:
-                            tsstart = utils.timestamp()
-                            peername = sc.connection.getpeername()
-                            if peername:
-                                request.ip = peername[0]
-                            httpversion, code, msg, headers, content = http.read_response(
-                                sc.rfile,
-                                request.method,
-                                self.config.body_size_limit
-                            )
-                        except http.HttpErrorConnClosed, v:
-                            self.del_server_connection()
-                            if sc.requestcount > 1:
-                                continue
-                            else:
-                                raise
-                        except http.HttpError, v:
-                            raise ProxyError(502, "Invalid server response.")
+                # If we've already pumped a request over this connection,
+                # it's possible that the server has timed out. If this is
+                # the case, we want to reconnect without sending an error
+                # to the client.
+                while 1:
+                    sc = self.get_server_connection(cc, scheme, host, port, self.sni, request=request)
+                    sc.send(request)
+                    if sc.requestcount == 1: # add timestamps only for first request (others are not directly affected)
+                        request.tcp_setup_timestamp = sc.tcp_setup_timestamp
+                        request.ssl_setup_timestamp = sc.ssl_setup_timestamp
+                    sc.rfile.reset_timestamps()
+                    try:
+                        peername = sc.connection.getpeername()
+                        if peername:
+                            request.ip = peername[0]
+                        httpversion, code, msg, headers, content = http.read_response(
+                            sc.rfile,
+                            request.method,
+                            self.config.body_size_limit
+                        )
+                    except http.HttpErrorConnClosed:
+                        self.del_server_connection()
+                        if sc.requestcount > 1:
+                            continue
                         else:
-                            break
+                            raise
+                    except http.HttpError:
+                        raise ProxyError(502, "Invalid server response.")
+                    else:
+                        break
 
-                    response = flow.Response(
-                        request, httpversion, code, msg, headers, content, sc.cert,
-                        sc.rfile.first_byte_timestamp
-                    )
-                    response_reply = self.channel.ask(response)
-                    # Not replying to the server invalidates the server
-                    # connection, so we terminate.
-                    if response_reply == KILL:
-                        sc.terminate()
-
+                response = flow.Response(
+                    request, httpversion, code, msg, headers, content, sc.cert,
+                    sc.rfile.first_byte_timestamp
+                )
+                response_reply = self.channel.ask("response", response)
+                # Not replying to the server invalidates the server
+                # connection, so we terminate.
                 if response_reply == KILL:
+                    sc.terminate()
+
+            if response_reply == KILL:
+                return
+            else:
+                response = response_reply
+                self.send_response(response)
+                if request and http.connection_close(request.httpversion, request.headers):
                     return
-                else:
-                    response = response_reply
-                    self.send_response(response)
-                    if request and http.connection_close(request.httpversion, request.headers):
-                        return
-                        # We could keep the client connection when the server
-                    # connection needs to go away.  However, we want to mimic
-                    # behaviour as closely as possible to the client, so we
-                    # disconnect.
-                    if http.connection_close(response.httpversion, response.headers):
-                        return
+                # We could keep the client connection when the server
+                # connection needs to go away.  However, we want to mimic
+                # behaviour as closely as possible to the client, so we
+                # disconnect.
+                if http.connection_close(response.httpversion, response.headers):
+                    return
         except (IOError, ProxyError, http.HttpError, tcp.NetLibError), e:
             if hasattr(e, "code"):
                 cc.error = "%s: %s" % (e.code, e.msg)
@@ -281,7 +275,7 @@ class ProxyHandler(tcp.BaseHandler):
 
             if request:
                 err = flow.Error(request, cc.error)
-                self.channel.ask(err)
+                self.channel.ask("error", err)
                 self.log(
                     cc, cc.error,
                     ["url: %s" % request.get_url()]
@@ -301,7 +295,7 @@ class ProxyHandler(tcp.BaseHandler):
             msg.append("  -> " + i)
         msg = "\n".join(msg)
         l = Log(msg)
-        self.channel.tell(l)
+        self.channel.tell("log", l)
 
     def find_cert(self, cc, host, port, sni):
         if self.config.certfile:
@@ -323,8 +317,7 @@ class ProxyHandler(tcp.BaseHandler):
     def establish_ssl(self, client_conn, host, port):
         dummycert = self.find_cert(client_conn, host, port, host)
         sni = HandleSNI(
-            self, client_conn, host, port,
-            dummycert, self.config.certfile or self.config.cacert
+            self, client_conn, host, port, self.config.certfile or self.config.cacert
         )
         try:
             self.convert_to_ssl(dummycert, self.config.certfile or self.config.cacert, handle_sni=sni)
@@ -416,13 +409,16 @@ class ProxyHandler(tcp.BaseHandler):
             raise ProxyError(400, "Bad HTTP request line: %s"%repr(line))
         method, scheme, host, port, path, httpversion = r
         headers = self.read_headers(authenticate=True)
-        content = http.read_http_body_request(
-            self.rfile, self.wfile, headers, httpversion, self.config.body_size_limit
+        self.handle_expect_header(headers, httpversion)
+        content = http.read_http_body(
+            self.rfile, headers, self.config.body_size_limit, True
         )
-        return flow.Request(
+        r = flow.Request(
             client_conn, httpversion, host, port, scheme, method, path, headers, content,
             self.rfile.first_byte_timestamp, utils.timestamp()
         )
+        r.set_live(self.rfile, self.wfile)
+        return r
 
     def _read_request_origin_form(self, client_conn, scheme, host, port):
         """
@@ -447,13 +443,24 @@ class ProxyHandler(tcp.BaseHandler):
             raise ProxyError(400, "Bad HTTP request line: %s" % repr(line))
         method, path, httpversion = r
         headers = self.read_headers(authenticate=False)
-        content = http.read_http_body_request(
-            self.rfile, self.wfile, headers, httpversion, self.config.body_size_limit
+        self.handle_expect_header(headers, httpversion)
+        content = http.read_http_body(
+            self.rfile, headers, self.config.body_size_limit, True
         )
-        return flow.Request(
+        r = flow.Request(
             client_conn, httpversion, host, port, scheme, method, path, headers, content,
             self.rfile.first_byte_timestamp, utils.timestamp()
         )
+        r.set_live(self.rfile, self.wfile)
+        return r
+
+    def handle_expect_header(self, headers, httpversion):
+        if "expect" in headers:
+            if "100-continue" in headers['expect'] and httpversion >= (1, 1):
+                #FIXME: Check if content-length is over limit
+                self.wfile.write('HTTP/1.1 100 Continue\r\n'
+                                 '\r\n')
+                del headers['expect']
 
     def read_headers(self, authenticate=False):
         headers = http.read_headers(self.rfile)
@@ -516,7 +523,6 @@ class ProxyServer(tcp.TCPServer):
             raise ProxyServerError('Error starting proxy server: ' + v.strerror)
         self.channel = None
         self.certstore = certutils.CertStore()
-        self.apps = AppRegistry()
 
     def start_slave(self, klass, channel):
         slave = klass(channel, self)
@@ -529,28 +535,6 @@ class ProxyServer(tcp.TCPServer):
         h = ProxyHandler(self.config, request, client_address, self, self.channel, self.server_version)
         h.handle()
         h.finish()
-
-
-class AppRegistry:
-    def __init__(self):
-        self.apps = {}
-
-    def add(self, app, domain, port):
-        """
-            Add a WSGI app to the registry, to be served for requests to the
-            specified domain, on the specified port.
-        """
-        self.apps[(domain, port)] = wsgi.WSGIAdaptor(app, domain, port, version.NAMEVERSION)
-
-    def get(self, request):
-        """
-            Returns an WSGIAdaptor instance if request matches an app, or None.
-        """
-        if (request.host, request.port) in self.apps:
-            return self.apps[(request.host, request.port)]
-        if "host" in request.headers:
-            host = request.headers["host"][0]
-            return self.apps.get((host, request.port), None)
 
 
 class DummyServer:

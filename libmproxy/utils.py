@@ -1,6 +1,7 @@
-import os, datetime, urlparse, string, urllib, re
+import os, datetime, urllib, re, sys
 import time, functools, cgi
 import json
+import netlib.version, libmproxy.version
 from netlib import http
 
 def timestamp():
@@ -243,3 +244,13 @@ def safe_subn(pattern, repl, target, *args, **kwargs):
         need a better solution that is aware of the actual content ecoding.
     """
     return re.subn(str(pattern), str(repl), target, *args, **kwargs)
+
+
+def check_netlib_version_equality():
+    # We don't introduce backward-incompatible changes in patch versions. Only consider major and minor version.
+    ok = (netlib.version.IVERSION[:2] == libmproxy.version.IVERSION[:2])
+    if not ok:
+        print >> sys.stderr, ("warning: You are using mitmproxy %s with netlib %s. "
+                              "Most likely, that doesn't work - please upgrade!") % (libmproxy.version.VERSION,
+                                                                                     netlib.version.VERSION)
+    return ok
