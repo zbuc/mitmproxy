@@ -2,7 +2,7 @@ import re, shlex, os
 from argparse import Action, ArgumentTypeError
 import version, filt
 
-APP_HOST = "mitm"
+APP_HOST = "mitm.it"
 APP_PORT = 80
 
 
@@ -230,8 +230,8 @@ def add_common_arguments(parser):
     group = parser.add_argument_group("Web App")
     group.add_argument(
         "-a",
-        action="store_true", dest="app", default=False,
-        help="Enable the mitmproxy web app."
+        action="store_false", dest="app", default=True,
+        help="Disable the mitmproxy web app."
     )
     group.add_argument(
         "--app-host",

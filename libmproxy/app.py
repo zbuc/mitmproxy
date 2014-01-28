@@ -97,8 +97,9 @@ def certs_index():
 
 @mapp.route("/api/cert.<ext>")
 def certs(ext):
-    if ext == "pem":
-        p = master().server.config.cacert
+    if ext in ["p12", "pem", "cer"]:
+        capath = master().server.config.cacert
+        p = os.path.splitext(capath)[0] + "-cert.pem"
         with open(p, "rb") as f:
             return flask.Response(f.read(), mimetype='application/x-x509-ca-cert')
     raise BadRequest()
