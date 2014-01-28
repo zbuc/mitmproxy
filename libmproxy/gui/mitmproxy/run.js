@@ -19,12 +19,7 @@ require(
     /* Super Ugly Workaround to refresh the grid
     manually as long as the mitmproxy isn't finished yet */
     window.setInterval(function(){
-        var grid = mitmproxy.MainLayout.trafficPane.grid;
-        if(grid._total == 0){
-           grid.refresh();
-        } else {
-            flowStore.notify();
-        }
+        flowStore.notify(true);
     },1000);
 
 	window.setTimeout(versionCheck, 3000);

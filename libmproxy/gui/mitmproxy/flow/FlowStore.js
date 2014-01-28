@@ -148,9 +148,10 @@ define(["dojo/when", "dojo/_base/lang", "dojo/_base/declare", "dojo/store/JsonRe
 			};
 		},
 		query: function(query, options) {
+            /*
             if(this._total && options && options.count && this._total <= options.start + options.count){
                 options.count += 50;
-            }
+            }*/
 
 			console.debug("query", query, options);
 			var results = this.inherited(arguments);
@@ -158,10 +159,10 @@ define(["dojo/when", "dojo/_base/lang", "dojo/_base/declare", "dojo/store/JsonRe
 
             /* This is a very ugly workaround for https://github.com/SitePen/dgrid/issues/363 */
             /* It makes your and my eyes bleed. */
-            var self = this;
+            /*var self = this;
             results.total.then(function(total){
                 self._total = total;
-            });
+            });*/
             if(options.count > 260){
                 console.debug("Running dgrid total count bugfix...");
                 mitmproxy.MainLayout.trafficPane.grid.refresh({keepScrollPosition:true});
