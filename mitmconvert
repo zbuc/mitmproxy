@@ -1,0 +1,71 @@
+#!/usr/bin/env python
+from __future__ import absolute_import, print_function
+import argparse, os
+from libmproxy import version, flow
+
+file_reader = dict(
+    mitm=flow.FlowReader,
+)
+file_writer = dict(
+    mitm=flow.FlowWriter,
+    # har=HarWriter
+)
+
+
+def guess_filetype(filename):
+    """
+    Simple filetype guesser that tries out all readers until the first one actually returns a flow.
+    """
+    for ftype, Reader in file_reader.iteritems():
+        with open(filename, "rb") as f:
+            try:
+                if Reader(f).stream().next():
+                    return ftype
+            except:
+                pass
+    raise RuntimeError("Couldn't detect file format of input file")
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(usage = "%(prog)s [output format] [input file]")
+    # positional (required) args
+    parser.add_argument("format_out", choices=file_writer.keys(), help="output format")
+    parser.add_argument("file_in", help="input file")
+    # optional args
+    parser.add_argument('-v', '--version', action='version', version="mitmconvert" + " " + version.VERSION)
+    parser.add_argument('-f', dest="format_in", choices=(["auto"] + file_reader.keys()), default="auto",
+                        help="input format (default: auto)")
+    parser.add_argument('-w', dest="file_out", metavar="outfile", help="output filename")
+
+    options = parser.parse_args()
+
+    if not os.path.isfile(options.file_in):
+        print("Input file doesn't exist or is not a file: %s" % options.file_in)
+        exit()
+
+    if not options.file_out:
+        options.file_out = "%s.%s" % (os.path.splitext(options.file_in)[0], options.format_out)
+    if os.path.exists(options.file_out):
+        print("Output file already exists: %s" % options.file_out)
+        exit()
+
+    if options.format_in == "auto":
+        options.format_in = guess_filetype(options.file_in)
+
+    Reader = file_reader[options.format_in]
+    Writer = file_writer[options.format_out]
+
+    print("Converting %s (%s) to %s (%s)..." % (
+        options.file_in, options.format_in,
+        options.file_out, options.format_out))
+    with open(options.file_in, "rb") as f_in:
+        with open(options.file_out, "wb") as f_out:
+            reader = Reader(f_in)
+            writer = Writer(f_out)
+            for i, flow in enumerate(reader.stream()):
+                writer.add(flow)
+                print("\rFlows processed: %6d" % (i + 1), end="")
+                import time
+                time.sleep(0.5)
+    print("")
+    print("All flows converted.")

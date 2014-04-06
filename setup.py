@@ -83,7 +83,7 @@ setup(
         url = "http://mitmproxy.org",
         packages = packages,
         package_data = package_data,
-        scripts = ["mitmproxy", "mitmdump"],
+        scripts = ["mitmproxy", "mitmdump", "mitmconvert"],
         classifiers = [
             "License :: OSI Approved :: MIT License",
             "Development Status :: 5 - Production/Stable",
