@@ -6,6 +6,7 @@ import hashlib
 import Cookie
 import cookielib
 import re
+import weakref
 import sortedcontainers
 from netlib import odict, wsgi
 import netlib.http
@@ -320,7 +321,22 @@ class FlowView(object):
     """
     A sorted and filtered view on all flows in the state.
     """
-    default_sort = lambda f: f.request.timestamp_end
+
+    class SortByInsertionOrder:
+        """
+        By default, flows are displayed in the order they appear in the state.
+        """
+        def __init__(self):
+            self.i = 0
+            self.map = weakref.WeakKeyDictionary()
+
+        def __call__(self, f):
+            if f not in self.map:
+                self.i += 1
+                self.map[f] = self.i
+            return self.map[f]
+
+    default_sort = SortByInsertionOrder()
 
     def __init__(self, flows=[], filt=None, sortfun=default_sort):
         if not filt:
@@ -329,7 +345,7 @@ class FlowView(object):
         self.sortfun = sortfun
 
         self.flows = sortedcontainers.SortedListWithKey(filter(filt, flows), key=sortfun)
-        self.sortkeys = dict((f, sortfun(f)) for f in flows)
+        self.sortkeys = dict((f, sortfun(f)) for f in self.flows)
 
     def add(self, f):
         if self.filt(f):
@@ -488,9 +504,9 @@ class State(StateBase):
             self.filt = f
         else:
             self.filt = None
-        self.recalculate_view()
+        self.recalculate_views()
 
-    def recalculate_view(self):
+    def recalculate_views(self):
         self._views[0] = FlowView(self._flow_list, self.filt)
 
 

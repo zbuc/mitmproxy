@@ -365,6 +365,7 @@ class TestState:
         c = flow.State()
         f = tutils.tflow()
         c.add_request(f)
+        assert c.view
         c.set_limit("~e")
         assert not c.view
         f.error = tutils.terr()
