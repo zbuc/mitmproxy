@@ -1,4 +1,5 @@
 from __future__ import absolute_import, print_function
+import json
 import tornado.ioloop
 import tornado.httpserver
 from .. import controller, flow
@@ -9,9 +10,47 @@ class Stop(Exception):
     pass
 
 
-class WebState(flow.State):
+class WebFlowView(flow.FlowView):
+    def __init__(self, connection, *args, **kwargs):
+        self.connection = connection
+        super(WebFlowView, self).__init__(*args, **kwargs)
+        self.emit("all_flows", [f.get_state(short=True) for f in self.flows])
+
+    def add(self, f):
+        index = super(WebFlowView, self).add(f)
+        if index is not None:
+            self.emit("add_flow", f.get_state(short=True))
+
+    def update(self, f):
+        if super(WebFlowView, self).update(f):
+            self.emit("update_flow", f.get_state(short=True))
+
+    def remove(self, f):
+        if super(WebFlowView, self).remove(f):
+            self.emit("delete_flow", f.get_state(short=True))
+
+    def emit(self, type, data):
+        self.connection.write_message(
+            json.dumps(
+                {
+                    "type": type,
+                    "data": data
+                }
+            )
+        )
+
+
+class WebState(flow.StateBase):
     def __init__(self):
-        flow.State.__init__(self)
+        super(WebState, self).__init__()
+
+    def open_view(self, connection, filt):
+        view = WebFlowView(connection, self._flow_list, filt)
+        self._views.append(view)
+        return view
+
+    def close_view(self, view):
+        self._views.remove(view)
 
 
 class Options(object):
@@ -58,8 +97,9 @@ class Options(object):
 class WebMaster(flow.FlowMaster):
     def __init__(self, server, options):
         self.options = options
-        self.app = app.Application(self.options.wdebug)
         super(WebMaster, self).__init__(server, WebState())
+        self.app = app.Application(self.state, self.options.wdebug)
+
 
         self.last_log_id = 0
 
@@ -83,21 +123,18 @@ class WebMaster(flow.FlowMaster):
             self.shutdown()
 
     def handle_request(self, f):
-        app.ClientConnection.broadcast("add_flow", f.get_state(True))
         flow.FlowMaster.handle_request(self, f)
         if f:
             f.reply()
         return f
 
     def handle_response(self, f):
-        app.ClientConnection.broadcast("update_flow", f.get_state(True))
         flow.FlowMaster.handle_response(self, f)
         if f:
             f.reply()
         return f
 
     def handle_error(self, f):
-        app.ClientConnection.broadcast("update_flow", f.get_state(True))
         flow.FlowMaster.handle_error(self, f)
         return f
 

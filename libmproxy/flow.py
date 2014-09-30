@@ -337,7 +337,7 @@ class FlowView(object):
             self.sortkeys[f] = self.sortfun(f)
             return self.flows.index(f)
         else:
-            return False
+            return None
 
     def update(self, f):
         """
