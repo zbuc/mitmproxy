@@ -6,6 +6,7 @@ import hashlib
 import Cookie
 import cookielib
 import re
+import sortedcontainers
 from netlib import odict, wsgi
 import netlib.http
 from . import controller, protocol, tnetstring, filt, script, version
@@ -315,25 +316,72 @@ class StickyAuthState:
                 f.request.headers["authorization"] = self.hosts[host]
 
 
-class State(object):
+class FlowView(object):
+    """
+    A sorted and filtered view on all flows in the state.
+    """
+    default_sort = lambda f: f.request.timestamp_end
+
+    def __init__(self, flows=[], filt=None, sortfun=default_sort):
+        if not filt:
+            filt = lambda f: True
+        self.filt = filt
+        self.sortfun = sortfun
+
+        self.flows = sortedcontainers.SortedListWithKey(filter(filt, flows), key=sortfun)
+        self.sortkeys = dict((f, sortfun(f)) for f in flows)
+
+    def add(self, f):
+        if self.filt(f):
+            self.flows.add(f)
+            self.sortkeys[f] = self.sortfun(f)
+            return self.flows.index(f)
+        else:
+            return False
+
+    def update(self, f):
+        """
+        Updates the given flow in the state.
+        @returns:
+            True, if the flow has been updated.
+            False, if the flow has been added or removed instead.
+        """
+        if f not in self.sortkeys:
+            # We may want to add the flow now because it matches the filter
+            self.add(f)
+            return False
+        elif not self.filt(f):
+            # We need to remove it as it doesn't match the filter anymore
+            self.remove(f)
+            return False
+        else:
+            # The update may have changed the sorting position
+            # If this is the case, remove the old one and add it at the new position.
+            try:
+                _ = self.flows.index(f)
+                return True
+            except ValueError:
+                self.remove(f)
+                self.add(f)
+                return False
+
+    def remove(self, f):
+        # the sort key may have changed - make sure that we remove anyways.
+        old_key = self.sortkeys.pop(f)
+        self.flows._list.remove((old_key, f))
+
+
+class StateBase(object):
+
     def __init__(self):
         self._flow_list = []
-        self.view = []
+        self._views = []
 
         # These are compiled filt expressions:
-        self._limit = None
         self.intercept = None
-        self._limit_txt = None
-
-    @property
-    def limit_txt(self):
-        return self._limit_txt
 
     def flow_count(self):
         return len(self._flow_list)
-
-    def index(self, f):
-        return self._flow_list.index(f)
 
     def active_flow_count(self):
         c = 0
@@ -342,14 +390,14 @@ class State(object):
                 c += 1
         return c
 
-    def add_request(self, flow):
+    def add_request(self, f):
         """
             Add a request to the state. Returns the matching flow.
         """
-        self._flow_list.append(flow)
-        if flow.match(self._limit):
-            self.view.append(flow)
-        return flow
+        self._flow_list.append(f)
+        for view in self._views:
+            view.add(f)
+        return f
 
     def add_response(self, f):
         """
@@ -357,8 +405,8 @@ class State(object):
         """
         if not f:
             return False
-        if f.match(self._limit) and not f in self.view:
-            self.view.append(f)
+        for view in self._views:
+            view.update(f)
         return f
 
     def add_error(self, f):
@@ -368,25 +416,26 @@ class State(object):
         """
         if not f:
             return None
-        if f.match(self._limit) and not f in self.view:
-            self.view.append(f)
+        for view in self._views:
+            view.update(f)
         return f
 
     def load_flows(self, flows):
         self._flow_list.extend(flows)
-        self.recalculate_view()
+        self.recalculate_views()
 
-    def set_limit(self, txt):
-        if txt:
-            f = filt.parse(txt)
-            if not f:
-                return "Invalid filter expression."
-            self._limit = f
-            self._limit_txt = txt
-        else:
-            self._limit = None
-            self._limit_txt = None
-        self.recalculate_view()
+    def delete_flow(self, f):
+        self._flow_list.remove(f)
+        for view in self._views:
+            view.remove(f)
+        return True
+
+    def clear(self):
+        for i in self._flow_list[:]:
+            self.delete_flow(i)
+
+    def recalculate_views(self):
+        raise NotImplementedError()  # pragma: nocover
 
     def set_intercept(self, txt):
         if txt:
@@ -399,22 +448,6 @@ class State(object):
             self.intercept = None
             self.intercept_txt = None
 
-    def recalculate_view(self):
-        if self._limit:
-            self.view = [i for i in self._flow_list if i.match(self._limit)]
-        else:
-            self.view = self._flow_list[:]
-
-    def delete_flow(self, f):
-        self._flow_list.remove(f)
-        if f in self.view:
-            self.view.remove(f)
-        return True
-
-    def clear(self):
-        for i in self._flow_list[:]:
-            self.delete_flow(i)
-
     def accept_all(self):
         for i in self._flow_list[:]:
             i.accept_intercept()
@@ -425,6 +458,40 @@ class State(object):
     def killall(self, master):
         for i in self._flow_list:
             i.kill(master)
+
+
+class State(StateBase):
+    """
+    Simple State object that provides a single view.
+    """
+    def __init__(self):
+        super(State, self).__init__()
+        self._views = [FlowView()]
+        self.filt = None
+
+    @property
+    def limit_txt(self):
+        if self.filt:
+            return self.filt.pattern
+        else:
+            return ""
+
+    @property
+    def view(self):
+        return self._views[0].flows
+
+    def set_limit(self, txt):
+        if txt:
+            f = filt.parse(txt)
+            if not f:
+                return "Invalid filter expression."
+            self.filt = f
+        else:
+            self.filt = None
+        self.recalculate_view()
+
+    def recalculate_view(self):
+        self._views[0] = FlowView(self._flow_list, self.filt)
 
 
 class FlowMaster(controller.Master):

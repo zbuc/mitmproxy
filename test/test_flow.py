@@ -607,7 +607,7 @@ class TestFlowMaster:
         f2 = fm.duplicate_flow(f)
         assert f2.response
         assert s.flow_count() == 2
-        assert s.index(f2) == 1
+        assert s.view.index(f2) == 1
 
     def test_all(self):
         s = flow.State()
