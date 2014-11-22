@@ -5,8 +5,10 @@ import mock
 from libmproxy import filt, protocol, controller, utils, tnetstring, flow
 from libmproxy.protocol.primitives import Error, Flow
 from libmproxy.protocol.http import decoded, CONTENT_MISSING
-from libmproxy.proxy.connection import ClientConnection, ServerConnection
-from netlib import tcp
+from libmproxy.proxy.config import HostMatcher
+from libmproxy.proxy import ProxyConfig
+from libmproxy.proxy.server import DummyServer
+from libmproxy.proxy.connection import ClientConnection
 import tutils
 
 
@@ -84,19 +86,20 @@ class TestClientPlaybackState:
         fm = flow.FlowMaster(None, s)
         fm.start_client_playback([first, tutils.tflow()], True)
         c = fm.client_playback
+        c.testing = True
 
         assert not c.done()
         assert not s.flow_count()
         assert c.count() == 2
-        c.tick(fm, testing=True)
+        c.tick(fm)
         assert s.flow_count()
         assert c.count() == 1
 
-        c.tick(fm, testing=True)
+        c.tick(fm)
         assert c.count() == 1
 
         c.clear(c.current)
-        c.tick(fm, testing=True)
+        c.tick(fm)
         assert c.count() == 0
         c.clear(c.current)
         assert c.done()
@@ -111,7 +114,7 @@ class TestClientPlaybackState:
 
 class TestServerPlaybackState:
     def test_hash(self):
-        s = flow.ServerPlaybackState(None, [], False, False)
+        s = flow.ServerPlaybackState(None, [], False, False, None, False)
         r = tutils.tflow()
         r2 = tutils.tflow()
 
@@ -123,7 +126,7 @@ class TestServerPlaybackState:
         assert s._hash(r) != s._hash(r2)
 
     def test_headers(self):
-        s = flow.ServerPlaybackState(["foo"], [], False, False)
+        s = flow.ServerPlaybackState(["foo"], [], False, False, None, False)
         r = tutils.tflow(resp=True)
         r.request.headers["foo"] = ["bar"]
         r2 = tutils.tflow(resp=True)
@@ -144,7 +147,7 @@ class TestServerPlaybackState:
         r2 = tutils.tflow(resp=True)
         r2.request.headers["key"] = ["two"]
 
-        s = flow.ServerPlaybackState(None, [r, r2], False, False)
+        s = flow.ServerPlaybackState(None, [r, r2], False, False, None, False)
         assert s.count() == 2
         assert len(s.fmap.keys()) == 1
 
@@ -165,11 +168,51 @@ class TestServerPlaybackState:
         r2 = tutils.tflow(resp=True)
         r2.request.headers["key"] = ["two"]
 
-        s = flow.ServerPlaybackState(None, [r, r2], False, True)
+        s = flow.ServerPlaybackState(None, [r, r2], False, True, None, False)
 
         assert s.count() == 2
         s.next_flow(r)
         assert s.count() == 2
+
+
+    def test_ignore_params(self):
+        s = flow.ServerPlaybackState(None, [], False, False, ["param1", "param2"], False)
+        r = tutils.tflow(resp=True)
+        r.request.path="/test?param1=1"
+        r2 = tutils.tflow(resp=True)
+        r2.request.path="/test"
+        assert s._hash(r) == s._hash(r2)
+        r2.request.path="/test?param1=2"
+        assert s._hash(r) == s._hash(r2)
+        r2.request.path="/test?param2=1"
+        assert s._hash(r) == s._hash(r2)
+        r2.request.path="/test?param3=2"
+        assert not s._hash(r) == s._hash(r2)
+
+    def test_ignore_content(self):
+        s = flow.ServerPlaybackState(None, [], False, False, None, False)
+        r = tutils.tflow(resp=True)
+        r2 = tutils.tflow(resp=True)
+        
+        r.request.content = "foo"
+        r2.request.content = "foo"
+        assert s._hash(r) == s._hash(r2)
+        r2.request.content = "bar"
+        assert not s._hash(r) == s._hash(r2)
+
+        #now ignoring content
+        s = flow.ServerPlaybackState(None, [], False, False, None, True)
+        r = tutils.tflow(resp=True)
+        r2 = tutils.tflow(resp=True)
+        r.request.content = "foo"
+        r2.request.content = "foo"
+        assert s._hash(r) == s._hash(r2)
+        r2.request.content = "bar"
+        assert s._hash(r) == s._hash(r2)
+        r2.request.content = ""
+        assert s._hash(r) == s._hash(r2)
+        r2.request.content = None
+        assert s._hash(r) == s._hash(r2)
 
 
 class TestFlow:
@@ -492,6 +535,14 @@ class TestSerialize:
         fm.load_flows(r)
         assert len(s._flow_list) == 6
 
+    def test_load_flows_reverse(self):
+        r = self._treader()
+        s = flow.State()
+        conf = ProxyConfig(mode="reverse", upstream_server=[True,True,"use-this-domain",80])
+        fm = flow.FlowMaster(DummyServer(conf), s)
+        fm.load_flows(r)
+        assert s._flow_list[0].request.host == "use-this-domain"
+
     def test_filter(self):
         sio = StringIO()
         fl = filt.parse("~c 200")
@@ -545,11 +596,11 @@ class TestFlowMaster:
 
     def test_getset_ignore(self):
         p = mock.Mock()
-        p.config.ignore = []
+        p.config.check_ignore = HostMatcher()
         fm = flow.FlowMaster(p, flow.State())
-        assert not fm.get_ignore()
-        fm.set_ignore(["^apple\.com:", ":443$"])
-        assert fm.get_ignore()
+        assert not fm.get_ignore_filter()
+        fm.set_ignore_filter(["^apple\.com:", ":443$"])
+        assert fm.get_ignore_filter()
 
     def test_replay(self):
         s = flow.State()
@@ -560,6 +611,9 @@ class TestFlowMaster:
 
         f.intercepting = True
         assert "intercepting" in fm.replay_request(f)
+
+        f.live = True
+        assert "live" in fm.replay_request(f)
 
     def test_script_reqerr(self):
         s = flow.State()
@@ -640,9 +694,11 @@ class TestFlowMaster:
 
         f = tutils.tflow(resp=True)
         pb = [tutils.tflow(resp=True), f]
-        fm = flow.FlowMaster(None, s)
-        assert not fm.start_server_playback(pb, False, [], False, False)
+
+        fm = flow.FlowMaster(DummyServer(ProxyConfig()), s)
+        assert not fm.start_server_playback(pb, False, [], False, False, None, False)
         assert not fm.start_client_playback(pb, False)
+        fm.client_playback.testing = True
 
         q = Queue.Queue()
         assert not fm.state.flow_count()
@@ -663,16 +719,16 @@ class TestFlowMaster:
         fm.refresh_server_playback = True
         assert not fm.do_server_playback(tutils.tflow())
 
-        fm.start_server_playback(pb, False, [], False, False)
+        fm.start_server_playback(pb, False, [], False, False, None, False)
         assert fm.do_server_playback(tutils.tflow())
 
-        fm.start_server_playback(pb, False, [], True, False)
+        fm.start_server_playback(pb, False, [], True, False, None, False)
         r = tutils.tflow()
         r.request.content = "gibble"
         assert not fm.do_server_playback(r)
         assert fm.do_server_playback(tutils.tflow())
 
-        fm.start_server_playback(pb, False, [], True, False)
+        fm.start_server_playback(pb, False, [], True, False, None, False)
         q = Queue.Queue()
         fm.tick(q, 0)
         assert fm.should_exit.is_set()
@@ -687,7 +743,7 @@ class TestFlowMaster:
         pb = [f]
         fm = flow.FlowMaster(None, s)
         fm.refresh_server_playback = True
-        fm.start_server_playback(pb, True, [], False, False)
+        fm.start_server_playback(pb, True, [], False, False, None, False)
 
         f = tutils.tflow()
         f.request.host = "nonexistent"

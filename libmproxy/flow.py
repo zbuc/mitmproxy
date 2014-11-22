@@ -13,7 +13,8 @@ import netlib.http
 from . import controller, protocol, tnetstring, filt, script, version
 from .onboarding import app
 from .protocol import http, handle
-from .proxy.config import parse_host_pattern
+from .proxy.config import HostMatcher
+import urlparse
 
 ODict = odict.ODict
 ODictCaseless = odict.ODictCaseless
@@ -28,7 +29,12 @@ class AppRegistry:
             Add a WSGI app to the registry, to be served for requests to the
             specified domain, on the specified port.
         """
-        self.apps[(domain, port)] = wsgi.WSGIAdaptor(app, domain, port, version.NAMEVERSION)
+        self.apps[(domain, port)] = wsgi.WSGIAdaptor(
+            app,
+            domain,
+            port,
+            version.NAMEVERSION
+        )
 
     def get(self, request):
         """
@@ -73,7 +79,8 @@ class ReplaceHooks:
 
     def get_specs(self):
         """
-            Retrieve the hook specifcations. Returns a list of (fpatt, rex, s) tuples.
+            Retrieve the hook specifcations. Returns a list of (fpatt, rex, s)
+            tuples.
         """
         return [i[:3] for i in self.lst]
 
@@ -120,7 +127,8 @@ class SetHeaders:
 
     def get_specs(self):
         """
-            Retrieve the hook specifcations. Returns a list of (fpatt, rex, s) tuples.
+            Retrieve the hook specifcations. Returns a list of (fpatt, rex, s)
+            tuples.
         """
         return [i[:3] for i in self.lst]
 
@@ -163,6 +171,7 @@ class ClientPlaybackState:
     def __init__(self, flows, exit):
         self.flows, self.exit = flows, exit
         self.current = None
+        self.testing = False  # Disables actual replay for testing.
 
     def count(self):
         return len(self.flows)
@@ -180,27 +189,25 @@ class ClientPlaybackState:
         if flow is self.current:
             self.current = None
 
-    def tick(self, master, testing=False):
-        """
-            testing: Disables actual replay for testing.
-        """
+    def tick(self, master):
         if self.flows and not self.current:
-            n = self.flows.pop(0)
-            n.reply = controller.DummyReply()
-            self.current = master.handle_request(n)
-            if not testing and not self.current.response:
-                master.replay_request(self.current)  # pragma: no cover
-            elif self.current.response:
-                master.handle_response(self.current)
+            self.current = self.flows.pop(0).copy()
+            if not self.testing:
+                master.replay_request(self.current)
+            else:
+                self.current.reply = controller.DummyReply()
+                master.handle_request(self.current)
+                if self.current.response:
+                    master.handle_response(self.current)
 
 
 class ServerPlaybackState:
-    def __init__(self, headers, flows, exit, nopop):
+    def __init__(self, headers, flows, exit, nopop, ignore_params, ignore_content):
         """
             headers: Case-insensitive list of request headers that should be
             included in request-response matching.
         """
-        self.headers, self.exit, self.nopop = headers, exit, nopop
+        self.headers, self.exit, self.nopop, self.ignore_params, self.ignore_content = headers, exit, nopop, ignore_params, ignore_content
         self.fmap = {}
         for i in flows:
             if i.response:
@@ -215,14 +222,30 @@ class ServerPlaybackState:
             Calculates a loose hash of the flow request.
         """
         r = flow.request
+
+        _, _, path, _, query, _ = urlparse.urlparse(r.url)
+        queriesArray = urlparse.parse_qsl(query)
+
+        filtered = []
+        ignore_params = self.ignore_params or []
+        for p in queriesArray:
+            if p[0] not in ignore_params:
+                filtered.append(p)
+
         key = [
             str(r.host),
             str(r.port),
             str(r.scheme),
             str(r.method),
-            str(r.path),
-            str(r.content),
-        ]
+            str(path),
+         ]
+        if not self.ignore_content:
+            key.append(str(r.content))
+
+        for p in filtered:
+            key.append(p[0])
+            key.append(p[1])
+
         if self.headers:
             hdrs = []
             for i in self.headers:
@@ -410,6 +433,8 @@ class StateBase(object):
         """
             Add a request to the state. Returns the matching flow.
         """
+        if f in self._flow_list:  # catch flow replay
+            return f
         self._flow_list.append(f)
         for view in self._views:
             view.add(f)
@@ -532,6 +557,9 @@ class FlowMaster(controller.Master):
         self.refresh_server_playback = False
         self.replacehooks = ReplaceHooks()
         self.setheaders = SetHeaders()
+        self.replay_ignore_params = False
+        self.replay_ignore_content = None
+
 
         self.stream = None
         self.apps = AppRegistry()
@@ -579,11 +607,17 @@ class FlowMaster(controller.Master):
         for script in self.scripts:
             self.run_single_script_hook(script, name, *args, **kwargs)
 
-    def get_ignore(self):
-        return [i.pattern for i in self.server.config.ignore]
+    def get_ignore_filter(self):
+        return self.server.config.check_ignore.patterns
 
-    def set_ignore(self, ignore):
-        self.server.config.ignore = parse_host_pattern(ignore)
+    def set_ignore_filter(self, host_patterns):
+        self.server.config.check_ignore = HostMatcher(host_patterns)
+
+    def get_tcp_filter(self):
+        return self.server.config.check_tcp.patterns
+
+    def set_tcp_filter(self, host_patterns):
+        self.server.config.check_tcp = HostMatcher(host_patterns)
 
     def set_stickycookie(self, txt):
         if txt:
@@ -622,12 +656,14 @@ class FlowMaster(controller.Master):
     def stop_client_playback(self):
         self.client_playback = None
 
-    def start_server_playback(self, flows, kill, headers, exit, nopop):
+    def start_server_playback(self, flows, kill, headers, exit, nopop, ignore_params, ignore_content):
         """
             flows: List of flows.
             kill: Boolean, should we kill requests not part of the replay?
+            ignore_params: list of parameters to ignore in server replay
+            ignore_content: true if request content should be ignored in server replay
         """
-        self.server_playback = ServerPlaybackState(headers, flows, exit, nopop)
+        self.server_playback = ServerPlaybackState(headers, flows, exit, nopop, ignore_params, ignore_content)
         self.kill_nonreplay = kill
 
     def stop_server_playback(self):
@@ -663,7 +699,7 @@ class FlowMaster(controller.Master):
             ]
             if all(e):
                 self.shutdown()
-            self.client_playback.tick(self, timeout)
+            self.client_playback.tick(self)
 
         return controller.Master.tick(self, q, timeout)
 
@@ -674,6 +710,11 @@ class FlowMaster(controller.Master):
         """
             Loads a flow, and returns a new flow object.
         """
+
+        if self.server and self.server.config.mode == "reverse":
+            f.request.host, f.request.port = self.server.config.mode.dst[2:]
+            f.request.scheme = "https" if self.server.config.mode.dst[1] else "http"
+
         f.reply = controller.DummyReply()
         if f.request:
             self.handle_request(f)
@@ -718,6 +759,8 @@ class FlowMaster(controller.Master):
         """
             Returns None if successful, or error message if not.
         """
+        if f.live:
+            return "Can't replay request which is still live..."
         if f.intercepting:
             return "Can't replay while intercepting..."
         if f.request.content == http.CONTENT_MISSING:
@@ -767,7 +810,11 @@ class FlowMaster(controller.Master):
         if f.live:
             app = self.apps.get(f.request)
             if app:
-                err = app.serve(f, f.client_conn.wfile, **{"mitmproxy.master": self})
+                err = app.serve(
+                    f,
+                    f.client_conn.wfile,
+                    **{"mitmproxy.master": self}
+                )
                 if err:
                     self.add_event("Error in wsgi app. %s"%err, "error")
                 f.reply(protocol.KILL)
@@ -782,8 +829,12 @@ class FlowMaster(controller.Master):
     def handle_responseheaders(self, f):
         self.run_script_hook("responseheaders", f)
 
-        if self.stream_large_bodies:
-            self.stream_large_bodies.run(f, False)
+        try:
+            if self.stream_large_bodies:
+                self.stream_large_bodies.run(f, False)
+        except netlib.http.HttpError:
+            f.reply(protocol.KILL)
+            return
 
         f.reply()
         return f
@@ -817,7 +868,6 @@ class FlowMaster(controller.Master):
         self.stream = None
 
 
-
 class FlowWriter:
     def __init__(self, fo):
         self.fo = fo
@@ -849,7 +899,7 @@ class FlowReader:
                     v = ".".join(str(i) for i in data["version"])
                     raise FlowReadError("Incompatible serialized data version: %s"%v)
                 off = self.fo.tell()
-                yield handle.protocols[data["conntype"]]["flow"].from_state(data)
+                yield handle.protocols[data["type"]]["flow"].from_state(data)
         except ValueError, v:
             # Error is due to EOF
             if self.fo.tell() == off and self.fo.read() == '':
