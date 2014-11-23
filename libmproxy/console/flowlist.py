@@ -144,7 +144,7 @@ class ConnectionItem(common.WWrap):
             self.master.sync_list_view()
         elif key == "d":
             self.flow.kill(self.master)
-            self.state.delete_flow(self.flow)
+            self.state.flows.remove(self.flow)
             self.master.sync_list_view()
         elif key == "D":
             f = self.master.duplicate_flow(self.flow)
@@ -210,7 +210,7 @@ class ConnectionItem(common.WWrap):
 class FlowListWalker(urwid.ListWalker):
     def __init__(self, master, state):
         self.master, self.state = master, state
-        if self.state.flow_count():
+        if self.state.flows:
             self.set_focus(0)
 
     def get_focus(self):
@@ -248,7 +248,7 @@ class FlowListBox(urwid.ListBox):
         elif key == "e":
             self.master.toggle_eventlog()
         elif key == "l":
-            self.master.prompt("Limit: ", self.master.state.limit_txt, self.master.set_limit)
+            self.master.prompt("Limit: ", self.master.state.flows.limit_txt, self.master.set_limit)
         elif key == "L":
             self.master.path_prompt(
                 "Load flows: ",

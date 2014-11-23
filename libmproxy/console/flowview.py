@@ -698,7 +698,7 @@ class FlowView(common.WWrap):
                         self.save_body
                     )
         elif key == "d":
-            if self.state.flow_count() == 1:
+            if len(self.state.flows) == 1:
                 self.master.view_flowlist()
             elif self.state.view.index(self.flow) == len(self.state.view)-1:
                 self.view_prev_flow(self.flow)
@@ -706,7 +706,7 @@ class FlowView(common.WWrap):
                 self.view_next_flow(self.flow)
             f = self.flow
             f.kill(self.master)
-            self.state.delete_flow(f)
+            self.state.flows.remove(f)
         elif key == "D":
             f = self.master.duplicate_flow(self.flow)
             self.master.view_flow(f)

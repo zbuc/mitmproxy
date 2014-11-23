@@ -141,10 +141,10 @@ class StatusBar(common.WWrap):
             r.append("[")
             r.append(("heading_key", "i"))
             r.append(":%s]"%self.master.state.intercept_txt)
-        if self.master.state.limit_txt:
+        if self.master.state.flows.limit_txt:
             r.append("[")
             r.append(("heading_key", "l"))
-            r.append(":%s]"%self.master.state.limit_txt)
+            r.append(":%s]"%self.master.state.flows.limit_txt)
         if self.master.stickycookie_txt:
             r.append("[")
             r.append(("heading_key", "t"))
@@ -200,7 +200,7 @@ class StatusBar(common.WWrap):
         if self.ab.expire and time.time() > self.ab.expire:
             self.message("")
 
-        fc = self.master.state.flow_count()
+        fc = len(self.master.state.flows)
         if self.master.state.focus is None:
             offset = 0
         else:
@@ -617,9 +617,9 @@ class ConsoleMaster(flow.FlowMaster):
 
         if self.options.rfile:
             ret = self.load_flows(self.options.rfile)
-            if ret and self.state.flow_count():
+            if ret and self.state.flows:
                 self.add_event("File truncated or corrupted. Loaded as many flows as possible.","error")
-            elif not self.state.flow_count():
+            elif not self.state.flows:
                 self.shutdown()
                 print >> sys.stderr, "Could not load file:", ret
                 sys.exit(1)
@@ -669,7 +669,7 @@ class ConsoleMaster(flow.FlowMaster):
         if self.ui.started:
             self.ui.clear()
         if self.state.follow_focus:
-            self.state.set_focus(self.state.flow_count())
+            self.state.set_focus(len(self.state.flows))
 
         if self.eventlog:
             self.body = flowlist.BodyPile(self)
@@ -1022,7 +1022,7 @@ class ConsoleMaster(flow.FlowMaster):
             self.server.config.no_upstream_cert = not self.server.config.no_upstream_cert
 
     def shutdown(self):
-        self.state.killall(self)
+        self.state.flows.kill_all(self)
         flow.FlowMaster.shutdown(self)
 
     def sync_list_view(self):
@@ -1037,11 +1037,11 @@ class ConsoleMaster(flow.FlowMaster):
         self.state.follow_focus = not self.state.follow_focus
         # jump to most recent flow if follow is now on
         if self.state.follow_focus:
-            self.state.set_focus(self.state.flow_count())
+            self.state.set_focus(len(self.state.flows))
             self.sync_list_view()
 
     def delete_flow(self, f):
-        self.state.delete_flow(f)
+        self.state.flows.remove(f)
         self.sync_list_view()
 
     def refresh_focus(self):

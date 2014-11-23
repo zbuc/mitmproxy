@@ -378,7 +378,14 @@ class FlowList(object):
         return
 
 
-class SortByInsertionOrder:
+def sort_by_size(f):
+    total = f.request.size()
+    if f.response:
+        total += f.response.size()
+    return total
+
+
+class SortByInsertionOrder(object):
     """
     By default, flows are displayed in the order they appear in the state.
     """
@@ -410,19 +417,19 @@ class SortKeyCache(object):
             self.cache[flow] = self.sortfun(flow)
         return self.cache[flow]
 
+default_sort = SortByInsertionOrder()
 
 class FlowView(FlowList):
     """
     A sorted and filtered view on all flows in the state.
     """
-    default_sort = SortByInsertionOrder()
 
     def __init__(self, flows, filt=None, sortfun=None):
         super(FlowView, self).__init__()
         if not filt:
             filt = lambda flow: True
         if not sortfun:
-            sortfun = self.default_sort
+            sortfun = default_sort
 
         self._build(flows, filt, sortfun)
 
