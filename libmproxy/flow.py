@@ -419,6 +419,7 @@ class SortKeyCache(object):
 
 default_sort = SortByInsertionOrder()
 
+
 class FlowView(FlowList):
     """
     A sorted and filtered view on all flows in the state.
@@ -487,6 +488,81 @@ class FlowView(FlowList):
             return True
         else:
             return False
+
+
+class PagedFlowView(FlowView):
+    ADD_BEFORE = -1
+    ADD_AFTER = -2
+
+    def __init__(self, flows, start, count, *args, **kwargs):
+        super(PagedFlowView, self).__init__(flows, *args, **kwargs)
+        self.start = start
+        self.count = count
+
+    @property
+    def stop(self):
+        return min(self.start + self.count, len(self._list))
+
+    @property
+    def below(self):
+        return len(self._list) - self.stop
+
+    def __iter__(self):
+        for i in xrange(self.start, self.stop):
+            yield self._list[i]
+
+    def __contains__(self, item):
+        try:
+            self._list.index(item, self.start, self.stop)
+            return True
+        except ValueError:
+            return False
+
+    def __getitem__(self, item):
+        if item < 0:
+            return self._list[item - self.below]
+        else:
+            return self._list[self.start + item]
+
+    def __nonzero__(self):
+        return self.start < len(self._list)
+
+    def __len__(self):
+        return max(0, self.stop - self.start)
+
+    def index(self, f):
+        return self._list.index(f, self.start, self.stop) - self.start
+
+    def add(self, f):
+        """
+        @returns
+            ADD_BEFORE if the flow has been added before the view,
+            ADD_AFTER if the flow has been added after the view,
+            the index 0 <= i < N of the flow in the view,
+            False, if the flow has not been added at all.
+        """
+        if super(PagedFlowView, self).add(f):
+            idx = self._list.index(f)
+            if idx < self.start:
+                return self.ADD_BEFORE
+            if self.stop <= idx:
+                return self.ADD_AFTER
+            return idx
+        return False
+
+    def update(self, f):
+        # Only return True if the flow has been in the view.
+        if super(PagedFlowView, self).update(f):
+            idx = self._list.index(f)
+            return self.start <= idx < self.stop
+
+    def remove(self, f):
+        try:
+            idx = self.index(f)
+        except ValueError:
+            idx = False
+        super(PagedFlowView, self).remove(f)
+        return idx
 
 
 class FlowStore(FlowList):

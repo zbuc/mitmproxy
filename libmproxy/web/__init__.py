@@ -10,7 +10,7 @@ class Stop(Exception):
     pass
 
 
-class WebFlowView(flow.FlowView):
+class WebFlowView(flow.PagedFlowView):
     def __init__(self, connection, *args, **kwargs):
         self.connection = connection
         super(WebFlowView, self).__init__(*args, **kwargs)
@@ -21,16 +21,38 @@ class WebFlowView(flow.FlowView):
         self.emit("all_flows", [f.get_state(short=True) for f in self])
 
     def add(self, f):
-        if super(WebFlowView, self).add(f):
-            self.emit("add_flow", f.get_state(short=True))
+        idx = super(WebFlowView, self).add(f)
+        if idx is False:
+            return False
+        elif idx == self.ADD_BEFORE:
+            self.emit("add_flow", dict(
+                flow=self[0].get_state(short=True),
+                pos=0
+            ))
+        elif idx == self.ADD_AFTER:
+            self.emit("update_total", len(self._list))
+        else:
+            self.emit("add_flow", dict(
+                flow=f.get_state(short=True),
+                pos=idx
+            ))
 
     def update(self, f):
         if super(WebFlowView, self).update(f):
             self.emit("update_flow", f.get_state(short=True))
 
     def remove(self, f):
-        if super(WebFlowView, self).remove(f):
-            self.emit("delete_flow", f.get_state(short=True))
+        below = self.below
+        idx = super(WebFlowView, self).remove(f)
+        if idx is not False:
+            if below > 0:
+                restock = self[-1].get_state(short=True)
+            else:
+                restock = False
+            self.emit("remove_flow", dict(
+                index = idx,
+                restock = restock
+            ))
 
     def emit(self, type, data):
         self.connection.write_message(
@@ -51,8 +73,8 @@ class WebFlowStore(flow.FlowStore):
         for view in self._views:
             view.recalculate(self)
 
-    def open_view(self, connection, *args, **kwargs):
-        view = WebFlowView(connection, self, *args, **kwargs)
+    def open_view(self, connection, start, count, *args, **kwargs):
+        view = WebFlowView(connection, self, start, count, *args, **kwargs)
         self._views.append(view)
         return view
 

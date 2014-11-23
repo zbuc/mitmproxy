@@ -1,8 +1,10 @@
 import os.path
+import sys
 import tornado.web
 import tornado.websocket
 import logging
 import json
+from .. import filt, flow
 
 
 class IndexHandler(tornado.web.RequestHandler):
@@ -36,9 +38,23 @@ class ClientConnection(tornado.websocket.WebSocketHandler):
 
 
 class FlowView(tornado.websocket.WebSocketHandler):
+    def __init__(self, *args, **kwargs):
+        super(FlowView, self).__init__(*args, **kwargs)
+        self.view = None
+
     def open(self):
+        start = int(self.get_argument("start", 0))
+        count = int(self.get_argument("count", sys.maxint))
+        filtstr = self.get_argument("filt", "")
+        sortstr = self.get_argument("sort", None)
+
+        filtfun = filt.parse(filtstr)
+        sortfun = dict(
+            size=flow.sort_by_size
+        ).get(sortstr, flow.default_sort)
+
         state = self.application.state
-        self.view = state.flows.open_view(self)
+        self.view = state.flows.open_view(self, start, count, filtfun, sortfun)
 
     def on_close(self):
         state = self.application.state
