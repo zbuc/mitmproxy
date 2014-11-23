@@ -255,9 +255,35 @@ class StatusBar(common.WWrap):
 
 #end nocover
 
-class ConsoleState(flow.State):
+class ConsoleFlowStore(flow.SimpleFlowStore):
     def __init__(self):
-        flow.State.__init__(self)
+        super(ConsoleFlowStore, self).__init__()
+        self.state = None
+
+    def add(self, f):
+        super(ConsoleFlowStore, self).add(f)
+        self.state.on_add_flow()
+
+    def update(self, f):
+        super(ConsoleFlowStore, self).update(f)
+        self.state.on_update_flow()
+
+    def remove(self, f):
+        super(ConsoleFlowStore, self).remove(f)
+        self.state.on_remove_flow(f)
+
+    def set_limit(self, txt):
+        super(ConsoleFlowStore, self).set_limit(txt)
+        self.state.on_set_limit()
+
+
+class ConsoleState(flow.State):
+    FlowsCls = ConsoleFlowStore
+
+    def __init__(self):
+        super(ConsoleState, self).__init__()
+        self.flows.state = self
+
         self.focus = None
         self.follow_focus = None
         self.default_body_view = contentview.get("Auto")
@@ -277,24 +303,18 @@ class ConsoleState(flow.State):
         d = self.flowsettings.get(flow, {})
         return d.get(key, default)
 
-    def add_request(self, f):
-        flow.State.add_request(self, f)
+    def on_add_flow(self):
         if self.focus is None:
             self.set_focus(0)
         elif self.follow_focus:
             self.set_focus(len(self.view) - 1)
-        return f
 
-    def add_response(self, resp):
-        f = flow.State.add_response(self, resp)
+    def on_update_flow(self):
         if self.focus is None:
             self.set_focus(0)
-        return f
 
-    def set_limit(self, limit):
-        ret = flow.State.set_limit(self, limit)
+    def on_set_limit(self):
         self.set_focus(self.focus)
-        return ret
 
     def get_focus(self):
         if not self.view or self.focus is None:
@@ -323,14 +343,12 @@ class ConsoleState(flow.State):
     def get_prev(self, pos):
         return self.get_from_pos(pos-1)
 
-    def delete_flow(self, f):
+    def on_remove_flow(self, f):
         if f in self.view and self.view.index(f) <= self.focus:
             self.focus -= 1
         if self.focus < 0:
             self.focus = None
-        ret = flow.State.delete_flow(self, f)
         self.set_focus(self.focus)
-        return ret
 
 
 
@@ -1011,7 +1029,7 @@ class ConsoleMaster(flow.FlowMaster):
         self.flow_list_walker._modified()
 
     def clear_flows(self):
-        self.state.clear()
+        self.state.flows.clear()
         self.sync_list_view()
 
     def toggle_follow_flows(self):

@@ -33,10 +33,10 @@ class CommonMixin:
     def test_replay(self):
         assert self.pathod("304").status_code == 304
         if isinstance(self, tservers.HTTPUpstreamProxTest) and self.ssl:
-            assert len(self.master.state.view) == 2
+            assert len(self.view) == 2
         else:
-            assert len(self.master.state.view) == 1
-        l = self.master.state.view[-1]
+            assert len(self.view) == 1
+        l = self.view[-1]
         assert l.response.code == 304
         l.request.path = "/p/305"
         self.wait_until_not_live(l)
@@ -67,7 +67,7 @@ class CommonMixin:
         f = self.pathod("304")
         assert f.status_code == 304
 
-        l = self.master.state.view[-1]  # In Upstream mode with SSL, we may already have a previous CONNECT request.
+        l = self.view[-1]  # In Upstream mode with SSL, we may already have a previous CONNECT request.
         assert l.client_conn.address
         assert "host" in l.request.headers
         assert l.response.code == 304
@@ -257,12 +257,12 @@ class TestHTTP(tservers.HTTPProxTest, CommonMixin, AppMixin):
         self.master.set_stream_large_bodies(1024 * 2)
 
         self.pathod("200:b@1k")
-        assert not self.master.state.view[-1].response.stream
-        assert len(self.master.state.view[-1].response.content) == 1024 * 1
+        assert not self.view[-1].response.stream
+        assert len(self.view[-1].response.content) == 1024 * 1
 
         self.pathod("200:b@3k")
-        assert self.master.state.view[-1].response.stream
-        assert self.master.state.view[-1].response.content == CONTENT_MISSING
+        assert self.view[-1].response.stream
+        assert self.view[-1].response.content == CONTENT_MISSING
         self.master.set_stream_large_bodies(None)
 
 class TestHTTPAuth(tservers.HTTPProxTest):
@@ -351,7 +351,7 @@ class TestProxy(tservers.HTTPProxTest):
         f = self.pathod("304")
         assert f.status_code == 304
 
-        f = self.master.state.view[0]
+        f = self.view[0]
         assert f.client_conn.address
         assert "host" in f.request.headers
         assert f.response.code == 304
@@ -362,7 +362,7 @@ class TestProxy(tservers.HTTPProxTest):
         f = self.pathod("304:b@1k:p50,1")
         assert f.status_code == 304
 
-        response = self.master.state.view[0].response
+        response = self.view[0].response
         assert 1 <= response.timestamp_end - response.timestamp_start <= 1.2
 
     def test_request_timestamps(self):
@@ -377,7 +377,7 @@ class TestProxy(tservers.HTTPProxTest):
         connection.recv(50000)
         connection.close()
 
-        request, response = self.master.state.view[0].request, self.master.state.view[0].response
+        request, response = self.view[0].request, self.view[0].response
         assert response.code == 304  # sanity test for our low level request
         assert 0.95 < (request.timestamp_end - request.timestamp_start) < 1.2 #time.sleep might be a little bit shorter than a second
 
@@ -389,10 +389,10 @@ class TestProxy(tservers.HTTPProxTest):
         f = self.pathod("304:b@10k")
         assert f.status_code == 304
 
-        request = self.master.state.view[0].request
+        request = self.view[0].request
         assert request.timestamp_end - request.timestamp_start <= 0.1
 
-        request = self.master.state.view[1].request
+        request = self.view[1].request
         assert request.timestamp_end - request.timestamp_start <= 0.1
 
     def test_request_tcp_setup_timestamp_presence(self):
@@ -407,8 +407,8 @@ class TestProxy(tservers.HTTPProxTest):
         connection.recv(5000)
         connection.close()
 
-        first_flow = self.master.state.view[0]
-        second_flow = self.master.state.view[1]
+        first_flow = self.view[0]
+        second_flow = self.view[1]
         assert first_flow.server_conn.timestamp_tcp_setup
         assert first_flow.server_conn.timestamp_ssl_setup is None
         assert second_flow.server_conn.timestamp_tcp_setup
@@ -417,7 +417,7 @@ class TestProxy(tservers.HTTPProxTest):
     def test_request_ip(self):
         f = self.pathod("200:b@100")
         assert f.status_code == 200
-        f = self.master.state.view[0]
+        f = self.view[0]
         assert f.server_conn.address == ("127.0.0.1", self.server.port)
 
 class TestProxySSL(tservers.HTTPProxTest):
@@ -426,7 +426,7 @@ class TestProxySSL(tservers.HTTPProxTest):
         # tests that the ssl timestamp is present when ssl is used
         f = self.pathod("304:b@10k")
         assert f.status_code == 304
-        first_flow = self.master.state.view[0]
+        first_flow = self.view[0]
         assert first_flow.server_conn.timestamp_ssl_setup
 
 
@@ -679,11 +679,11 @@ class TestUpstreamProxySSL(tservers.HTTPUpstreamProxTest, CommonMixin, TcpMixin)
         assert req.content == "content"
         assert req.status_code == 418
 
-        assert self.proxy.tmaster.state.flow_count() == 2  # CONNECT from pathoc to chain[0],
-                                                              # request from pathoc to chain[0]
-        assert self.chain[0].tmaster.state.flow_count() == 2  # CONNECT from proxy to chain[1],
-                                                              # request from proxy to chain[1]
-        assert self.chain[1].tmaster.state.flow_count() == 1  # request from chain[0] (regular proxy doesn't store CONNECTs)
+        assert len(self.proxy.tmaster.state.flows) == 2     # CONNECT from pathoc to chain[0],
+                                                            # request from pathoc to chain[0]
+        assert len(self.chain[0].tmaster.state.flows) == 2  # CONNECT from proxy to chain[1],
+                                                            # request from proxy to chain[1]
+        assert len(self.chain[1].tmaster.state.flows) == 1  # request from chain[0] (regular proxy doesn't store CONNECTs)
 
     def test_closing_connect_response(self):
         """
@@ -738,33 +738,33 @@ class TestProxyChainingSSLReconnect(tservers.HTTPUpstreamProxTest):
 
         p = self.pathoc()
         req = p.request("get:'/p/418:b\"content\"'")
-        assert self.proxy.tmaster.state.flow_count() == 2  # CONNECT and request
-        assert self.chain[0].tmaster.state.flow_count() == 4  # CONNECT, failing request,
-                                                              # reCONNECT, request
-        assert self.chain[1].tmaster.state.flow_count() == 2  # failing request, request
-                                                           # (doesn't store (repeated) CONNECTs from chain[0]
-                                                           #  as it is a regular proxy)
+        assert len(self.proxy.tmaster.state.flows) == 2     # CONNECT and request
+        assert len(self.chain[0].tmaster.state.flows) == 4  # CONNECT, failing request,
+                                                            # reCONNECT, request
+        assert len(self.chain[1].tmaster.state.flows) == 2  # failing request, request
+                                                            # (doesn't store (repeated) CONNECTs from chain[0]
+                                                            #  as it is a regular proxy)
         assert req.content == "content"
         assert req.status_code == 418
 
-        assert not self.chain[1].tmaster.state._flow_list[0].response  # killed
-        assert self.chain[1].tmaster.state._flow_list[1].response
+        assert not self.chain[1].tmaster.state.flows[0].response  # killed
+        assert self.chain[1].tmaster.state.flows[1].response
 
-        assert self.proxy.tmaster.state._flow_list[0].request.form_in == "authority"
-        assert self.proxy.tmaster.state._flow_list[1].request.form_in == "relative"
+        assert self.proxy.tmaster.state.flows[0].request.form_in == "authority"
+        assert self.proxy.tmaster.state.flows[1].request.form_in == "relative"
 
-        assert self.chain[0].tmaster.state._flow_list[0].request.form_in == "authority"
-        assert self.chain[0].tmaster.state._flow_list[1].request.form_in == "relative"
-        assert self.chain[0].tmaster.state._flow_list[2].request.form_in == "authority"
-        assert self.chain[0].tmaster.state._flow_list[3].request.form_in == "relative"
+        assert self.chain[0].tmaster.state.flows[0].request.form_in == "authority"
+        assert self.chain[0].tmaster.state.flows[1].request.form_in == "relative"
+        assert self.chain[0].tmaster.state.flows[2].request.form_in == "authority"
+        assert self.chain[0].tmaster.state.flows[3].request.form_in == "relative"
 
-        assert self.chain[1].tmaster.state._flow_list[0].request.form_in == "relative"
-        assert self.chain[1].tmaster.state._flow_list[1].request.form_in == "relative"
+        assert self.chain[1].tmaster.state.flows[0].request.form_in == "relative"
+        assert self.chain[1].tmaster.state.flows[1].request.form_in == "relative"
 
         req = p.request("get:'/p/418:b\"content2\"'")
 
         assert req.status_code == 502
-        assert self.proxy.tmaster.state.flow_count() == 3  # + new request
-        assert self.chain[0].tmaster.state.flow_count() == 6  # + new request, repeated CONNECT from chain[1]
-                                                              # (both terminated)
-        assert self.chain[1].tmaster.state.flow_count() == 2  # nothing happened here
+        assert len(self.proxy.tmaster.state.flows) == 3     # + new request
+        assert len(self.chain[0].tmaster.state.flows) == 6  # + new request, repeated CONNECT from chain[1]
+                                                            # (both terminated)
+        assert len(self.chain[1].tmaster.state.flows) == 2  # nothing happened here

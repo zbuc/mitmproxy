@@ -89,10 +89,10 @@ class TestClientPlaybackState:
         c.testing = True
 
         assert not c.done()
-        assert not s.flow_count()
+        assert not len(s.flows)
         assert c.count() == 2
         c.tick(fm)
-        assert s.flow_count()
+        assert len(s.flows)
         assert c.count() == 1
 
         c.tick(fm)
@@ -309,7 +309,7 @@ class TestFlow:
 
         for i in s.view:
             assert not i.reply.acked
-        s.killall(fm)
+        s.flows.kill_all(fm)
         for i in s.view:
             assert i.reply.acked
 
@@ -364,9 +364,9 @@ class TestState:
     def test_backup(self):
         c = flow.State()
         f = tutils.tflow()
-        c.add_request(f)
+        c.flows.add(f)
         f.backup()
-        c.revert(f)
+        f.revert()
 
     def test_flow(self):
         """
@@ -376,43 +376,42 @@ class TestState:
         """
         c = flow.State()
         f = tutils.tflow()
-        c.add_request(f)
+        c.flows.add(f)
         assert f
-        assert c.flow_count() == 1
-        assert c.active_flow_count() == 1
+        assert len(c.flows) == 1
+        assert c.flows.active_count() == 1
 
         newf = tutils.tflow()
-        assert c.add_request(newf)
-        assert c.active_flow_count() == 2
+        c.flows.add(newf)
+        assert c.flows.active_count() == 2
 
         f.response = tutils.tresp()
-        assert c.add_response(f)
-        assert c.flow_count() == 2
-        assert c.active_flow_count() == 1
+        c.flows.update(f)
+        assert len(c.flows) == 2
+        assert c.flows.active_count() == 1
 
         _ = tutils.tresp()
-        assert not c.add_response(None)
-        assert c.active_flow_count() == 1
+        assert c.flows.active_count() == 1
 
         newf.response = tutils.tresp()
-        assert c.add_response(newf)
-        assert c.active_flow_count() == 0
+        c.flows.update(newf)
+        assert c.flows.active_count() == 0
 
     def test_err(self):
         c = flow.State()
         f = tutils.tflow()
-        c.add_request(f)
+        c.flows.add(f)
         f.error = Error("message")
-        assert c.add_error(f)
+        c.flows.update(f)
 
         c = flow.State()
         f = tutils.tflow()
-        c.add_request(f)
+        c.flows.add(f)
         assert c.view
-        c.set_limit("~e")
+        c.flows.set_limit("~e")
         assert not c.view
         f.error = tutils.terr()
-        assert c.add_error(f)
+        c.flows.update(f)
         assert c.view
 
     def test_set_limit(self):
@@ -421,27 +420,27 @@ class TestState:
         f = tutils.tflow()
         assert len(c.view) == 0
 
-        c.add_request(f)
+        c.flows.add(f)
         assert len(c.view) == 1
 
-        c.set_limit("~s")
-        assert c.limit_txt == "~s"
+        c.flows.set_limit("~s")
+        assert c.flows.limit_txt == "~s"
         assert len(c.view) == 0
         f.response = tutils.tresp()
-        c.add_response(f)
+        c.flows.update(f)
         assert len(c.view) == 1
-        c.set_limit(None)
+        c.flows.set_limit(None)
         assert len(c.view) == 1
 
         f = tutils.tflow()
-        c.add_request(f)
+        c.flows.add(f)
         assert len(c.view) == 2
-        c.set_limit("~q")
+        c.flows.set_limit("~q")
         assert len(c.view) == 1
-        c.set_limit("~s")
+        c.flows.set_limit("~s")
         assert len(c.view) == 1
 
-        assert "Invalid" in c.set_limit("~")
+        assert "Invalid" in c.flows.set_limit("~")
 
     def test_set_intercept(self):
         c = flow.State()
@@ -453,18 +452,18 @@ class TestState:
 
     def _add_request(self, state):
         f = tutils.tflow()
-        state.add_request(f)
+        state.flows.add(f)
         return f
 
     def _add_response(self, state):
         f = tutils.tflow()
-        state.add_request(f)
+        state.flows.add(f)
         f.response = tutils.tresp()
-        state.add_response(f)
+        state.flows.update(f)
 
     def _add_error(self, state):
         f = tutils.tflow(err=True)
-        state.add_request(f)
+        state.flows.add(f)
 
     def test_clear(self):
         c = flow.State()
@@ -472,7 +471,7 @@ class TestState:
         f.intercepting = True
 
         c.clear()
-        assert c.flow_count() == 0
+        assert not c.flows
 
     def test_dump_flows(self):
         c = flow.State()
@@ -484,18 +483,18 @@ class TestState:
         self._add_response(c)
         self._add_error(c)
 
-        flows = c.view[:]
+        flows = c.flows[:]
         c.clear()
 
-        c.load_flows(flows)
-        assert isinstance(c._flow_list[0], Flow)
+        c.flows.extend(flows)
+        assert isinstance(c.flows[0], Flow)
 
     def test_accept_all(self):
         c = flow.State()
         self._add_request(c)
         self._add_response(c)
         self._add_request(c)
-        c.accept_all()
+        c.flows.accept_all()
 
 
 class TestSerialize:
@@ -533,7 +532,7 @@ class TestSerialize:
         s = flow.State()
         fm = flow.FlowMaster(None, s)
         fm.load_flows(r)
-        assert len(s._flow_list) == 6
+        assert len(s.flows) == 6
 
     def test_load_flows_reverse(self):
         r = self._treader()
@@ -541,7 +540,7 @@ class TestSerialize:
         conf = ProxyConfig(mode="reverse", upstream_server=[True,True,"use-this-domain",80])
         fm = flow.FlowMaster(DummyServer(conf), s)
         fm.load_flows(r)
-        assert s._flow_list[0].request.host == "use-this-domain"
+        assert s.flows[0].request.host == "use-this-domain"
 
     def test_filter(self):
         sio = StringIO()
@@ -658,11 +657,11 @@ class TestFlowMaster:
         fm = flow.FlowMaster(None, s)
         f = tutils.tflow(resp=True)
         f = fm.load_flow(f)
-        assert s.flow_count() == 1
+        assert len(s.flows) == 1
         f2 = fm.duplicate_flow(f)
         assert f2.response
-        assert s.flow_count() == 2
-        assert s.view.index(f2) == 1
+        assert len(s.flows) == 2
+        assert s.flows.index(f2) == 1
 
     def test_all(self):
         s = flow.State()
@@ -673,12 +672,11 @@ class TestFlowMaster:
         fm.handle_clientconnect(f.client_conn)
         f.request = tutils.treq()
         fm.handle_request(f)
-        assert s.flow_count() == 1
+        assert len(s.flows) == 1
 
         f.response = tutils.tresp()
         fm.handle_response(f)
-        assert not fm.handle_response(None)
-        assert s.flow_count() == 1
+        assert len(s.flows) == 1
 
         fm.handle_clientdisconnect(f.client_conn)
 
@@ -701,9 +699,9 @@ class TestFlowMaster:
         fm.client_playback.testing = True
 
         q = Queue.Queue()
-        assert not fm.state.flow_count()
+        assert not fm.state.flows
         fm.tick(q, 0)
-        assert fm.state.flow_count()
+        assert fm.state.flows
 
         f.error = Error("error")
         fm.handle_error(f)

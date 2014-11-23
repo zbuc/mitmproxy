@@ -38,11 +38,11 @@ class ClientConnection(tornado.websocket.WebSocketHandler):
 class FlowView(tornado.websocket.WebSocketHandler):
     def open(self):
         state = self.application.state
-        self.view = state.open_view(self, None)
+        self.view = state.flows.open_view(self)
 
     def on_close(self):
         state = self.application.state
-        state.close_view(self.view)
+        state.flows.close_view(self.view)
 
 
 class Application(tornado.web.Application):

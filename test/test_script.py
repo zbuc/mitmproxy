@@ -31,9 +31,9 @@ class TestScript:
         fm.load_script(tutils.test_data.path("scripts/duplicate_flow.py"))
         f = tutils.tflow()
         fm.handle_request(f)
-        assert fm.state.flow_count() == 2
-        assert not fm.state.view[0].request.is_replay
-        assert fm.state.view[1].request.is_replay
+        assert len(fm.state.flows) == 2
+        assert not fm.state.flows[0].request.is_replay
+        assert fm.state.flows[1].request.is_replay
 
     def test_err(self):
         s = flow.State()

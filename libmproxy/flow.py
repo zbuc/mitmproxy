@@ -2,12 +2,13 @@
     This module provides more sophisticated flow tracking and provides filtering and interception facilities.
 """
 from __future__ import absolute_import
+from abc import abstractmethod, ABCMeta
 import hashlib
 import Cookie
 import cookielib
 import re
 import weakref
-import sortedcontainers
+from sortedcontainers import sortedlistwithkey
 from netlib import odict, wsgi
 import netlib.http
 from . import controller, protocol, tnetstring, filt, script, version
@@ -340,143 +341,248 @@ class StickyAuthState:
                 f.request.headers["authorization"] = self.hosts[host]
 
 
-class FlowView(object):
+class FlowList(object):
+    __metaclass__ = ABCMeta
+
+    def __init__(self):
+        self._list = []
+
+    def __iter__(self):
+        return iter(self._list)
+
+    def __contains__(self, item):
+        return item in self._list
+
+    def __getitem__(self, item):
+        return self._list[item]
+
+    def __nonzero__(self):
+        return bool(self._list)
+
+    def __len__(self):
+        return len(self._list)
+
+    def index(self, f):
+        return self._list.index(f)
+
+    @abstractmethod
+    def add(self, f):
+        return
+
+    @abstractmethod
+    def update(self, f):
+        return
+
+    @abstractmethod
+    def remove(self, f):
+        return
+
+
+class SortByInsertionOrder:
+    """
+    By default, flows are displayed in the order they appear in the state.
+    """
+    def __init__(self):
+        self.i = 0
+        self.map = weakref.WeakKeyDictionary()
+
+    def __call__(self, f):
+        if f not in self.map:
+            self.i += 1
+            self.map[f] = self.i
+        return self.map[f]
+
+
+class SortKeyCache(object):
+    """
+    At any time, the value of sortfun(flow) may change due to modifications of flow,
+    possibly leading to an incorrectly sorted list.
+    To cope for this, we freeze the sort key to be the same value for every subsequent call of .sortfun().
+    This way, the sorting position of each element stays fixed, irrespective of change to the underlying model.
+    If the view is notified of an updated flow, we check whether that cached value is outdated and act accordingly.
+    """
+    def __init__(self, sortfun):
+        self.sortfun = sortfun
+        self.cache = weakref.WeakKeyDictionary()
+
+    def __call__(self, flow):
+        if flow not in self.cache:
+            self.cache[flow] = self.sortfun(flow)
+        return self.cache[flow]
+
+
+class FlowView(FlowList):
     """
     A sorted and filtered view on all flows in the state.
     """
-
-    class SortByInsertionOrder:
-        """
-        By default, flows are displayed in the order they appear in the state.
-        """
-        def __init__(self):
-            self.i = 0
-            self.map = weakref.WeakKeyDictionary()
-
-        def __call__(self, f):
-            if f not in self.map:
-                self.i += 1
-                self.map[f] = self.i
-            return self.map[f]
-
     default_sort = SortByInsertionOrder()
 
-    def __init__(self, flows=[], filt=None, sortfun=default_sort):
+    def __init__(self, flows, filt=None, sortfun=None):
+        super(FlowView, self).__init__()
         if not filt:
-            filt = lambda f: True
-        self.filt = filt
-        self.sortfun = sortfun
+            filt = lambda flow: True
+        if not sortfun:
+            sortfun = self.default_sort
 
-        self.flows = sortedcontainers.SortedListWithKey(filter(filt, flows), key=sortfun)
-        self.sortkeys = dict((f, sortfun(f)) for f in self.flows)
+        self._build(flows, filt, sortfun)
+
+    def _build(self, flows, filt=None, sortfun=None):
+        if filt:
+            self.filt = filt
+        if sortfun:
+            self.sort = SortKeyCache(sortfun)
+
+        filtered_flows = filter(self.filt, flows)
+        self._list = sortedlistwithkey.SortedListWithKey(filtered_flows, key=self.sort)
 
     def add(self, f):
+        """
+        @returns True if the Flow has been added, False otherwise.
+        """
         if self.filt(f):
-            self.flows.add(f)
-            self.sortkeys[f] = self.sortfun(f)
-            return self.flows.index(f)
+            self._list.add(f)
+            return True
         else:
-            return None
+            return False
 
     def update(self, f):
         """
         Updates the given flow in the state.
-        @returns:
-            True, if the flow has been updated.
-            False, if the flow has been added or removed instead.
+        Returns True if the flow has been updated (but not added/removed/moved),
+        False otherwise.
         """
-        if f not in self.sortkeys:
-            # We may want to add the flow now because it matches the filter
+        if f not in self._list:
+            # The flow is currently not in our view
+            # We call add, which checks if it now matches the filter.
             self.add(f)
-            return False
         elif not self.filt(f):
             # We need to remove it as it doesn't match the filter anymore
             self.remove(f)
-            return False
         else:
-            # The update may have changed the sorting position
-            # If this is the case, remove the old one and add it at the new position.
-            try:
-                _ = self.flows.index(f)
-                return True
-            except ValueError:
+            # Flow in view got updated - we only need to react to changes in the sorting order.
+            if self.sort.cache[f] != self.sort.sortfun(f):
+                # (Further optimization would be possible here)
                 self.remove(f)
                 self.add(f)
-                return False
+            else:
+                return True
+        return False
 
     def remove(self, f):
-        # the sort key may have changed - make sure that we remove anyways.
-        old_key = self.sortkeys.pop(f)
-        self.flows._list.remove((old_key, f))
+        """
+        @returns True if the Flow has been removed, False if it was not in the list in the first place.
+        """
+        if f in self._list:
+            self._list.remove(f)
+            # We can now release the "freeze" of the sortkey,
+            # see SortKeyCache impl.
+            self.sort.cache.pop(f, None)
+            return True
+        else:
+            return False
 
 
-class StateBase(object):
-
+class FlowStore(FlowList):
+    """
+    Responsible for handling flows in the state:
+    Keeps a list of all flows and provides views on them.
+    """
     def __init__(self):
-        self._flow_list = []
+        super(FlowStore, self).__init__()
+        self._set = set()  # Used for O(1) lookups
         self._views = []
+        self.recalculate_views()
 
-        # These are compiled filt expressions:
-        self.intercept = None
+    def __contains__(self, f):
+        return f in self._set
 
-    def flow_count(self):
-        return len(self._flow_list)
+    def add(self, f):
+        """
+        Adds a flow to the state.
+        The flow to add must not be present in the state.
+        """
+        self._list.append(f)
+        self._set.add(f)
+        for view in self._views:
+            view.add(f)
 
-    def active_flow_count(self):
+    def update(self, f):
+        """
+        Notifies the state that a flow has been updated.
+        The flow must be present in the state.
+        """
+        for view in self._views:
+            view.update(f)
+
+    def remove(self, f):
+        """
+        Deletes a flow from the state.
+        The flow must be present in the state.
+        """
+        self._list.remove(f)
+        self._set.remove(f)
+        for view in self._views:
+            view.remove(f)
+
+    # Expensive bulk operations
+
+    def extend(self, flows):
+        """
+        Adds a list of flows to the state.
+        The list of flows to add must not contain flows that are already in the state.
+        """
+        self._list.extend(flows)
+        self._set.update(flows)
+        self.recalculate_views()
+
+    def clear(self):
+        self.__init__()
+
+    def recalculate_views(self):
+        """
+        Expensive operation: Recalculate all the views after a bulk change.
+        """
+        raise NotImplementedError()  # pragma: nocover
+
+    # Utility functions.
+    # There are some common cases where we need to argue about all flows
+    # irrespective of filters on the view etc (i.e. on shutdown).
+
+    def active_count(self):
         c = 0
-        for i in self._flow_list:
+        for i in self._list:
             if not i.response and not i.error:
                 c += 1
         return c
 
-    def add_request(self, f):
-        """
-            Add a request to the state. Returns the matching flow.
-        """
-        if f in self._flow_list:  # catch flow replay
-            return f
-        self._flow_list.append(f)
-        for view in self._views:
-            view.add(f)
-        return f
+    # TODO: Should accept_all operate on views or on all flows?
+    def accept_all(self):
+        for f in self._list:
+            f.accept_intercept()
 
-    def add_response(self, f):
-        """
-            Add a response to the state. Returns the matching flow.
-        """
-        if not f:
-            return False
-        for view in self._views:
-            view.update(f)
-        return f
+    def kill_all(self, master):
+        for f in self._list:
+            f.kill(master)
 
-    def add_error(self, f):
-        """
-            Add an error response to the state. Returns the matching flow, or
-            None if there isn't one.
-        """
-        if not f:
-            return None
-        for view in self._views:
-            view.update(f)
-        return f
 
-    def load_flows(self, flows):
-        self._flow_list.extend(flows)
-        self.recalculate_views()
+class StateBase(object):
+    FlowsCls = FlowStore
 
-    def delete_flow(self, f):
-        self._flow_list.remove(f)
-        for view in self._views:
-            view.remove(f)
-        return True
+    def __init__(self):
+        self.flows = self.FlowsCls()
+
+        # These are compiled filt expressions:
+        self.intercept = None
 
     def clear(self):
-        for i in self._flow_list[:]:
-            self.delete_flow(i)
+        self.__init__()
 
-    def recalculate_views(self):
-        raise NotImplementedError()  # pragma: nocover
+    @property
+    def intercept_txt(self):
+        if self.intercept:
+            return self.intercept.pattern
+        else:
+            return None
 
     def set_intercept(self, txt):
         if txt:
@@ -484,42 +590,31 @@ class StateBase(object):
             if not f:
                 return "Invalid filter expression."
             self.intercept = f
-            self.intercept_txt = txt
         else:
             self.intercept = None
-            self.intercept_txt = None
-
-    def accept_all(self):
-        for i in self._flow_list[:]:
-            i.accept_intercept()
-
-    def revert(self, f):
-        f.revert()
-
-    def killall(self, master):
-        for i in self._flow_list:
-            i.kill(master)
 
 
-class State(StateBase):
+class SimpleFlowStore(FlowStore):
     """
-    Simple State object that provides a single view.
+    Simple FlowStore impl that provides only a single filterable view.
     """
     def __init__(self):
-        super(State, self).__init__()
-        self._views = [FlowView()]
         self.filt = None
+        super(SimpleFlowStore, self).__init__()
+
+    def recalculate_views(self):
+        self._views = [FlowView(self, self.filt)]
+
+    @property
+    def view(self):
+        return self._views[0]
 
     @property
     def limit_txt(self):
         if self.filt:
             return self.filt.pattern
         else:
-            return ""
-
-    @property
-    def view(self):
-        return self._views[0].flows
+            return None
 
     def set_limit(self, txt):
         if txt:
@@ -531,8 +626,16 @@ class State(StateBase):
             self.filt = None
         self.recalculate_views()
 
-    def recalculate_views(self):
-        self._views[0] = FlowView(self._flow_list, self.filt)
+
+class State(StateBase):
+    """
+    Simple State object that provides a single view.
+    """
+    FlowsCls = SimpleFlowStore
+
+    @property
+    def view(self):
+        return self.flows.view
 
 
 class FlowMaster(controller.Master):
@@ -695,7 +798,7 @@ class FlowMaster(controller.Master):
             e = [
                 self.client_playback.done(),
                 self.client_playback.exit,
-                self.state.active_flow_count() == 0
+                self.state.flows.active_count() == 0
             ]
             if all(e):
                 self.shutdown()
@@ -799,7 +902,7 @@ class FlowMaster(controller.Master):
         sc.reply()
 
     def handle_error(self, f):
-        self.state.add_error(f)
+        self.state.flows.update(f)
         self.run_script_hook("error", f)
         if self.client_playback:
             self.client_playback.clear(f)
@@ -819,7 +922,8 @@ class FlowMaster(controller.Master):
                     self.add_event("Error in wsgi app. %s"%err, "error")
                 f.reply(protocol.KILL)
                 return
-        self.state.add_request(f)
+        if f not in self.state.flows:  # don't add again on replay
+            self.state.flows.add(f)
         self.replacehooks.run(f)
         self.setheaders.run(f)
         self.run_script_hook("request", f)
@@ -840,7 +944,7 @@ class FlowMaster(controller.Master):
         return f
 
     def handle_response(self, f):
-        self.state.add_response(f)
+        self.state.flows.update(f)
         self.replacehooks.run(f)
         self.setheaders.run(f)
         self.run_script_hook("response", f)
@@ -855,7 +959,7 @@ class FlowMaster(controller.Master):
         self.unload_scripts()
         controller.Master.shutdown(self)
         if self.stream:
-            for i in self.state._flow_list:
+            for i in self.state.flows:
                 if not i.response:
                     self.stream.add(i)
             self.stop_stream()

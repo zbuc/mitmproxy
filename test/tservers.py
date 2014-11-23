@@ -114,6 +114,10 @@ class ProxTestBase(object):
     def master(self):
         return self.proxy.tmaster
 
+    @property
+    def view(self):
+        return self.master.state.view
+
     @classmethod
     def get_proxy_config(cls):
         cls.cadir = os.path.join(tempfile.gettempdir(), "mitmproxy")

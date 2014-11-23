@@ -15,7 +15,7 @@ class TestConsoleState:
         """
         c = console.ConsoleState()
         f = self._add_request(c)
-        assert f in c._flow_list
+        assert f in c.flows
         assert c.get_focus() == (f, 0)
 
     def test_focus(self):
@@ -45,26 +45,27 @@ class TestConsoleState:
         c.set_focus(2)
         assert c.get_focus() == (f2, 1)
 
-        c.delete_flow(f2)
+        c.flows.remove(f2)
         assert c.get_focus() == (f, 0)
-        c.delete_flow(f)
+        c.flows.remove(f)
         assert c.get_focus() == (None, None)
 
     def _add_request(self, state):
         f = tutils.tflow()
-        return state.add_request(f)
+        state.flows.add(f)
+        return f
 
     def _add_response(self, state):
         f = self._add_request(state)
         f.response = tutils.tresp()
-        state.add_response(f)
+        state.flows.update(f)
 
     def test_add_response(self):
         c = console.ConsoleState()
         f = self._add_request(c)
         f.response = tutils.tresp()
         c.focus = None
-        c.add_response(f)
+        c.flows.add(f)
 
     def test_focus_view(self):
         c = console.ConsoleState()
@@ -74,7 +75,7 @@ class TestConsoleState:
         self._add_response(c)
         self._add_request(c)
         self._add_response(c)
-        assert not c.set_limit("~s")
+        assert not c.flows.set_limit("~s")
         assert len(c.view) == 3
         assert c.focus == 0
 
@@ -86,7 +87,7 @@ class TestConsoleState:
         assert c.get_flow_setting(f, "oink") == None
         assert c.get_flow_setting(f, "oink", "foo") == "foo"
         assert len(c.flowsettings) == 1
-        c.delete_flow(f)
+        c.flows.remove(f)
         del f
         gc.collect()
         assert len(c.flowsettings) == 0

@@ -14,11 +14,14 @@ class WebFlowView(flow.FlowView):
     def __init__(self, connection, *args, **kwargs):
         self.connection = connection
         super(WebFlowView, self).__init__(*args, **kwargs)
-        self.emit("all_flows", [f.get_state(short=True) for f in self.flows])
+        self.emit("all_flows", [f.get_state(short=True) for f in self])
+
+    def recalculate(self, flows):
+        self._build(flows)
+        self.emit("all_flows", [f.get_state(short=True) for f in self])
 
     def add(self, f):
-        index = super(WebFlowView, self).add(f)
-        if index is not None:
+        if super(WebFlowView, self).add(f):
             self.emit("add_flow", f.get_state(short=True))
 
     def update(self, f):
@@ -40,17 +43,25 @@ class WebFlowView(flow.FlowView):
         )
 
 
-class WebState(flow.StateBase):
+class WebFlowStore(flow.FlowStore):
     def __init__(self):
-        super(WebState, self).__init__()
+        super(WebFlowStore, self).__init__()
 
-    def open_view(self, connection, filt):
-        view = WebFlowView(connection, self._flow_list, filt)
+    def recalculate_views(self):
+        for view in self._views:
+            view.recalculate(self)
+
+    def open_view(self, connection, *args, **kwargs):
+        view = WebFlowView(connection, self, *args, **kwargs)
         self._views.append(view)
         return view
 
     def close_view(self, view):
         self._views.remove(view)
+
+
+class WebState(flow.StateBase):
+    FlowsCls = WebFlowStore
 
 
 class Options(object):
