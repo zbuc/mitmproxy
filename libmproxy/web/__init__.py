@@ -14,23 +14,33 @@ class WebFlowView(flow.PagedFlowView):
     def __init__(self, connection, *args, **kwargs):
         self.connection = connection
         super(WebFlowView, self).__init__(*args, **kwargs)
-        self.emit("all_flows", [f.get_state(short=True) for f in self])
+        self.reset_connection_state()
+
+    def reset_connection_state(self):
+        self.emit("all_flows", dict(
+            flows = [f.get_state(short=True) for f in self],
+            total = self.total
+        ))
 
     def recalculate(self, flows):
         self._build(flows)
-        self.emit("all_flows", [f.get_state(short=True) for f in self])
+        self.reset_connection_state()
 
     def add(self, f):
         idx = super(WebFlowView, self).add(f)
         if idx is False:
             return False
         elif idx == self.ADD_BEFORE:
+            # A flow has been added before our view.
+            # Our view started at e.g 100, but 100 is now 101,
+            # so we need to shift it. We add the first row;
+            # the last must be removed by the client if there are more rows than count.
             self.emit("add_flow", dict(
                 flow=self[0].get_state(short=True),
                 pos=0
             ))
         elif idx == self.ADD_AFTER:
-            self.emit("update_total", len(self._list))
+            self.emit("update_total", self.total)
         else:
             self.emit("add_flow", dict(
                 flow=f.get_state(short=True),
@@ -39,18 +49,23 @@ class WebFlowView(flow.PagedFlowView):
 
     def update(self, f):
         if super(WebFlowView, self).update(f):
-            self.emit("update_flow", f.get_state(short=True))
+            self.emit("update_flow", dict(
+                flow=f.get_state(short=True),
+                pos=self.index(f)
+            ))
 
     def remove(self, f):
         below = self.below
         idx = super(WebFlowView, self).remove(f)
         if idx is not False:
+            # restock is the quick version of a subsequent add.
+            # We include this in the remove method to avoid any jitter on the client.
             if below > 0:
                 restock = self[-1].get_state(short=True)
             else:
                 restock = False
             self.emit("remove_flow", dict(
-                index = idx,
+                pos = idx,
                 restock = restock
             ))
 

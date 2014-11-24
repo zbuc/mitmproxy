@@ -7,8 +7,12 @@ var MainView = React.createClass({
         };
     },
     componentDidMount: function () {
-        this.flowStore = FlowStore.getView();
-        this.flowStore.addListener("change",this.onFlowChange);
+        this.flowStore = new FlowView(0, 100);
+        this.flowStore.addListener("all_flows",this.onFlowChange);
+        this.flowStore.addListener("add_flow",this.onFlowChange);
+        this.flowStore.addListener("update_flow",this.onFlowChange);
+        this.flowStore.addListener("remove_flow",this.onFlowChange);
+        //this.flowStore.addListener("update_total",this.onFlowChange);
     },
     componentWillUnmount: function () {
         this.flowStore.removeListener("change",this.onFlowChange);
@@ -16,7 +20,7 @@ var MainView = React.createClass({
     },
     onFlowChange: function () {
         this.setState({
-            flows: this.flowStore.getAll()
+            flows: this.flowStore.flows
         });
     },
     selectDetailTab: function(panel) {

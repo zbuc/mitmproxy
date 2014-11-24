@@ -37,9 +37,9 @@ class ClientConnection(tornado.websocket.WebSocketHandler):
                 logging.error("Error sending message", exc_info=True)
 
 
-class FlowView(tornado.websocket.WebSocketHandler):
+class FlowViewConnection(tornado.websocket.WebSocketHandler):
     def __init__(self, *args, **kwargs):
-        super(FlowView, self).__init__(*args, **kwargs)
+        super(FlowViewConnection, self).__init__(*args, **kwargs)
         self.view = None
 
     def open(self):
@@ -67,7 +67,7 @@ class Application(tornado.web.Application):
         handlers = [
             (r"/", IndexHandler),
             (r"/updates", ClientConnection),
-            (r"/flowview", FlowView),
+            (r"/flowview", FlowViewConnection),
         ]
         settings = dict(
             template_path=os.path.join(os.path.dirname(__file__), "templates"),

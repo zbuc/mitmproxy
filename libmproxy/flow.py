@@ -507,6 +507,10 @@ class PagedFlowView(FlowView):
     def below(self):
         return len(self._list) - self.stop
 
+    @property
+    def total(self):
+        return len(self._list)
+
     def __iter__(self):
         for i in xrange(self.start, self.stop):
             yield self._list[i]

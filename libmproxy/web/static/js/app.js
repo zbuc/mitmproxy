@@ -134,6 +134,44 @@ var EventLogActions = {
         });
     }
 };
+function Connection(url) {
+    if(url[0] != "/"){
+        this.url = url;
+    } else {
+        this.url = location.origin.replace("http", "ws") + url;
+    }
+    var ws = new WebSocket(this.url);
+    ws.onopen = function(){
+        this.onopen.apply(this, arguments);
+    }.bind(this);
+    ws.onmessage = function(){
+        this.onmessage.apply(this, arguments);
+    }.bind(this);
+    ws.onerror = function(){
+        this.onerror.apply(this, arguments);
+    }.bind(this);
+    ws.onclose = function(){
+        this.onclose.apply(this, arguments);
+    }.bind(this);
+    this.ws = ws;
+}
+Connection.prototype.onopen = function (open) {
+    console.debug("onopen", this, arguments);
+};
+Connection.prototype.onmessage = function (message) {
+    console.warn("onmessage (not implemented)", this, message.data);
+};
+Connection.prototype.onerror = function (error) {
+    EventLogActions.add_event("WebSocket Connection Error.");
+    console.debug("onerror", this, arguments);
+};
+Connection.prototype.onclose = function (close) {
+    EventLogActions.add_event("WebSocket Connection closed.");
+    console.debug("onclose", this, arguments);
+};
+Connection.prototype.close = function(){
+    this.ws.close();
+};
 var _MessageUtils = {
     getContentType: function (message) {
         return this.get_first_header(message, /^Content-Type$/i);
@@ -335,132 +373,68 @@ _.extend(_EventLogStore.prototype, EventEmitter.prototype, {
 
 var EventLogStore = new _EventLogStore();
 AppDispatcher.register(EventLogStore.handle.bind(EventLogStore));
-function FlowView(store, live) {
+function FlowView(start, count, filt, sort, url) {
     EventEmitter.call(this);
-    this._store = store;
-    this.live = live;
+
+    this.start = start;
+    this.count = count;
+    this.filt = filt;
+    this.sort = sort;
+
+    url = (url || "/flowview") + "?" + $.param({
+        start: this.start,
+        count: this.count,
+        filt: this.filt,
+        sort: this.sort
+    });
+
+    Connection.call(this, url);
+
     this.flows = [];
-
-    this.add = this.add.bind(this);
-    this.update = this.update.bind(this);
-
-    if (live) {
-        this._store.addListener(ActionTypes.ADD_FLOW, this.add);
-        this._store.addListener(ActionTypes.UPDATE_FLOW, this.update);
-    }
+    this.total = 0;
 }
 
-_.extend(FlowView.prototype, EventEmitter.prototype, {
+_.extend(FlowView.prototype, EventEmitter.prototype, Connection.prototype, {
     close: function () {
-        this._store.removeListener(ActionTypes.ADD_FLOW, this.add);
-        this._store.removeListener(ActionTypes.UPDATE_FLOW, this.update);
+        Connection.prototype.close.call(this);
     },
-    getAll: function () {
-        return this.flows;
-    },
-    add: function (flow) {
-        return this.update(flow);
-    },
-    add_bulk: function (flows) {
-        //Treat all previously received updates as newer than the bulk update.
-        //If they weren't newer, we're about to receive an update for them very soon.
-        var updates = this.flows;
-        this.flows = flows;
-        updates.forEach(function(flow){
-            this._update(flow);
-        }.bind(this));
-        this.emit("change");
-    },
-    _update: function(flow){
-        var idx = _.findIndex(this.flows, function(f){
-            return flow.id === f.id;
-        });
-
-        if(idx < 0){
-            this.flows.push(flow);
-            //if(this.flows.length > 100){
-            //    this.flows.shift();
-            //}
-        } else {
-            this.flows[idx] = flow;
-        }
-    },
-    update: function(flow){
-        this._update(flow);
-        this.emit("change");
-    },
-});
-
-
-function _FlowStore() {
-    EventEmitter.call(this);
-}
-_.extend(_FlowStore.prototype, EventEmitter.prototype, {
-    getView: function (since) {
-        var view = new FlowView(this, !since);
-
-        $.getJSON("/static/flows.json", function(flows){
-           flows = flows.concat(_.cloneDeep(flows)).concat(_.cloneDeep(flows));
-           var id = 1;
-           flows.forEach(function(flow){
-               flow.id = "uuid-" + id++;
-           });
-           view.add_bulk(flows); 
-
-        });
-
-        return view;
-    },
-    handle: function (action) {
-        switch (action.type) {
-            case ActionTypes.ADD_FLOW:
-            case ActionTypes.UPDATE_FLOW:
-                this.emit(action.type, action.data);
+    handle_message: function (type, data) {
+        switch (type) {
+            case "all_flows":
+                this.flows = data.flows;
+                this.total = data.total;
+                break;
+            case "add_flow":
+                this.flows.splice(data.pos, 0, data.flow);
+                if (this.flows.length > this.count) {
+                    this.flows.pop();
+                }
+                break;
+            case "update_flow":
+                this.flows[data.pos] = data.flow;
+                break;
+            case "remove_flow":
+                this.flows.splice(data.pos, 1);
+                if (data.restock) {
+                    this.flows.push(data.restock);
+                } else {
+                    this.total--;
+                }
+                break;
+            case "update_total":
+                this.total = data;
                 break;
             default:
-                return;
+                console.error("Unknown message type: " + message.type);
         }
+        this.emit(message.type, message);
+    },
+    onmessage: function (e) {
+        message = JSON.parse(e.data);
+        console.log("flowview: " + message.type, message.data);
+        this.handle_message(message.type, message.data);
     }
 });
-
-
-var FlowStore = new _FlowStore();
-AppDispatcher.register(FlowStore.handle.bind(FlowStore));
-
-function _Connection(url) {
-    this.url = url;
-}
-_Connection.prototype.init = function () {
-    this.openWebSocketConnection();
-};
-_Connection.prototype.openWebSocketConnection = function () {
-    this.ws = new WebSocket(this.url.replace("http", "ws"));
-    var ws = this.ws;
-
-    ws.onopen = this.onopen.bind(this);
-    ws.onmessage = this.onmessage.bind(this);
-    ws.onerror = this.onerror.bind(this);
-    ws.onclose = this.onclose.bind(this);
-};
-_Connection.prototype.onopen = function (open) {
-    console.debug("onopen", this, arguments);
-};
-_Connection.prototype.onmessage = function (message) {
-    //AppDispatcher.dispatchServerAction(...);
-    var m = JSON.parse(message.data);
-    AppDispatcher.dispatchServerAction(m);
-};
-_Connection.prototype.onerror = function (error) {
-    EventLogActions.add_event("WebSocket Connection Error.");
-    console.debug("onerror", this, arguments);
-};
-_Connection.prototype.onclose = function (close) {
-    EventLogActions.add_event("WebSocket Connection closed.");
-    console.debug("onclose", this, arguments);
-};
-
-var Connection = new _Connection(location.origin + "/updates");
-
 /** @jsx React.DOM */
 
 //React utils. For other utilities, see ../utils.js
@@ -1214,8 +1188,12 @@ var MainView = React.createClass({displayName: 'MainView',
         };
     },
     componentDidMount: function () {
-        this.flowStore = FlowStore.getView();
-        this.flowStore.addListener("change",this.onFlowChange);
+        this.flowStore = new FlowView(0, 100);
+        this.flowStore.addListener("all_flows",this.onFlowChange);
+        this.flowStore.addListener("add_flow",this.onFlowChange);
+        this.flowStore.addListener("update_flow",this.onFlowChange);
+        this.flowStore.addListener("remove_flow",this.onFlowChange);
+        //this.flowStore.addListener("update_total",this.onFlowChange);
     },
     componentWillUnmount: function () {
         this.flowStore.removeListener("change",this.onFlowChange);
@@ -1223,7 +1201,7 @@ var MainView = React.createClass({displayName: 'MainView',
     },
     onFlowChange: function () {
         this.setState({
-            flows: this.flowStore.getAll()
+            flows: this.flowStore.flows
         });
     },
     selectDetailTab: function(panel) {
@@ -1518,7 +1496,11 @@ var ProxyApp = (
     )
     );
 $(function () {
-    Connection.init();
-    app = React.renderComponent(ProxyApp, document.body);
+    window.app = React.renderComponent(ProxyApp, document.body);
+    var UpdateConnection = new Connection("/updates");
+    UpdateConnection.onmessage = function (message) {
+        var m = JSON.parse(message.data);
+        AppDispatcher.dispatchServerAction(m);
+    }.bind(UpdateConnection);
 });
 //# sourceMappingURL=app.js.map

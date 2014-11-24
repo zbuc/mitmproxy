@@ -1,91 +1,62 @@
-function FlowView(store, live) {
+function FlowView(start, count, filt, sort, url) {
     EventEmitter.call(this);
-    this._store = store;
-    this.live = live;
+
+    this.start = start;
+    this.count = count;
+    this.filt = filt;
+    this.sort = sort;
+
+    url = (url || "/flowview") + "?" + $.param({
+        start: this.start,
+        count: this.count,
+        filt: this.filt,
+        sort: this.sort
+    });
+
+    Connection.call(this, url);
+
     this.flows = [];
-
-    this.add = this.add.bind(this);
-    this.update = this.update.bind(this);
-
-    if (live) {
-        this._store.addListener(ActionTypes.ADD_FLOW, this.add);
-        this._store.addListener(ActionTypes.UPDATE_FLOW, this.update);
-    }
+    this.total = 0;
 }
 
-_.extend(FlowView.prototype, EventEmitter.prototype, {
+_.extend(FlowView.prototype, EventEmitter.prototype, Connection.prototype, {
     close: function () {
-        this._store.removeListener(ActionTypes.ADD_FLOW, this.add);
-        this._store.removeListener(ActionTypes.UPDATE_FLOW, this.update);
+        Connection.prototype.close.call(this);
     },
-    getAll: function () {
-        return this.flows;
-    },
-    add: function (flow) {
-        return this.update(flow);
-    },
-    add_bulk: function (flows) {
-        //Treat all previously received updates as newer than the bulk update.
-        //If they weren't newer, we're about to receive an update for them very soon.
-        var updates = this.flows;
-        this.flows = flows;
-        updates.forEach(function(flow){
-            this._update(flow);
-        }.bind(this));
-        this.emit("change");
-    },
-    _update: function(flow){
-        var idx = _.findIndex(this.flows, function(f){
-            return flow.id === f.id;
-        });
-
-        if(idx < 0){
-            this.flows.push(flow);
-            //if(this.flows.length > 100){
-            //    this.flows.shift();
-            //}
-        } else {
-            this.flows[idx] = flow;
-        }
-    },
-    update: function(flow){
-        this._update(flow);
-        this.emit("change");
-    },
-});
-
-
-function _FlowStore() {
-    EventEmitter.call(this);
-}
-_.extend(_FlowStore.prototype, EventEmitter.prototype, {
-    getView: function (since) {
-        var view = new FlowView(this, !since);
-
-        $.getJSON("/static/flows.json", function(flows){
-           flows = flows.concat(_.cloneDeep(flows)).concat(_.cloneDeep(flows));
-           var id = 1;
-           flows.forEach(function(flow){
-               flow.id = "uuid-" + id++;
-           });
-           view.add_bulk(flows); 
-
-        });
-
-        return view;
-    },
-    handle: function (action) {
-        switch (action.type) {
-            case ActionTypes.ADD_FLOW:
-            case ActionTypes.UPDATE_FLOW:
-                this.emit(action.type, action.data);
+    handle_message: function (type, data) {
+        switch (type) {
+            case "all_flows":
+                this.flows = data.flows;
+                this.total = data.total;
+                break;
+            case "add_flow":
+                this.flows.splice(data.pos, 0, data.flow);
+                if (this.flows.length > this.count) {
+                    this.flows.pop();
+                }
+                break;
+            case "update_flow":
+                this.flows[data.pos] = data.flow;
+                break;
+            case "remove_flow":
+                this.flows.splice(data.pos, 1);
+                if (data.restock) {
+                    this.flows.push(data.restock);
+                } else {
+                    this.total--;
+                }
+                break;
+            case "update_total":
+                this.total = data;
                 break;
             default:
-                return;
+                console.error("Unknown message type: " + message.type);
         }
+        this.emit(message.type, message);
+    },
+    onmessage: function (e) {
+        message = JSON.parse(e.data);
+        console.log("flowview: " + message.type, message.data);
+        this.handle_message(message.type, message.data);
     }
 });
-
-
-var FlowStore = new _FlowStore();
-AppDispatcher.register(FlowStore.handle.bind(FlowStore));
