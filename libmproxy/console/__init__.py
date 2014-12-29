@@ -582,6 +582,7 @@ class ConsoleMaster(flow.FlowMaster):
 
     def run(self):
         self.ui = urwid.raw_display.Screen()
+        self.ui.set_mouse_tracking()
         self.ui.set_terminal_properties(256)
         self.ui.register_palette(self.palette)
         self.flow_list_walker = flowlist.FlowListWalker(self, self.state)
@@ -822,9 +823,15 @@ class ConsoleMaster(flow.FlowMaster):
                 changed = self.tick(self.masterq, 0.01)
                 self.ui.set_input_timeouts(max_wait=0.01)
                 keys = self.ui.get_input()
-                if keys:
-                    changed = True
                 for k in keys:
+                    if k[0].startswith("mouse"):
+                        if k[0] == "mouse drag":
+                            self.statusbar.message("Hold down shift or ctrl to select text.", expire=1)
+                            continue
+                        else:
+                            self.add_event(k)
+
+                    changed = True
                     if self.prompting:
                         if k == "esc":
                             self.prompt_cancel()
@@ -922,14 +929,6 @@ class ConsoleMaster(flow.FlowMaster):
                                         self.edit_scripts
                                     )
                                 )
-                                #if self.scripts:
-                                #    self.load_script(None)
-                                #else:
-                                #    self.path_prompt(
-                                #        "Set script: ",
-                                #        self.state.last_script,
-                                #        self.set_script
-                                #    )
                             elif k == "S":
                                 if not self.server_playback:
                                     self.path_prompt(
